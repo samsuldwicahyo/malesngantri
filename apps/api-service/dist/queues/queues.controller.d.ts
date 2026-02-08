@@ -1,0 +1,65 @@
+import { QueuesService } from './queues.service';
+export declare class QueuesController {
+    private readonly queuesService;
+    constructor(queuesService: QueuesService);
+    join(body: any): Promise<{
+        id: string;
+        barbershopId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+        status: import(".prisma/client").$Enums.QueueStatus;
+        guestName: string | null;
+        bookingSource: string;
+        scheduledTime: Date | null;
+        estimatedStartTime: Date | null;
+        estimatedEndTime: Date | null;
+        actualStartTime: Date | null;
+        actualEndTime: Date | null;
+        notified30m: boolean;
+        notified15m: boolean;
+        barberId: string | null;
+        customerId: string | null;
+        serviceId: string;
+    }>;
+    start(id: string): Promise<{
+        id: string;
+        barbershopId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+        status: import(".prisma/client").$Enums.QueueStatus;
+        guestName: string | null;
+        bookingSource: string;
+        scheduledTime: Date | null;
+        estimatedStartTime: Date | null;
+        estimatedEndTime: Date | null;
+        actualStartTime: Date | null;
+        actualEndTime: Date | null;
+        notified30m: boolean;
+        notified15m: boolean;
+        barberId: string | null;
+        customerId: string | null;
+        serviceId: string;
+    }>;
+    complete(id: string): Promise<{
+        id: string;
+        barbershopId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+        status: import(".prisma/client").$Enums.QueueStatus;
+        guestName: string | null;
+        bookingSource: string;
+        scheduledTime: Date | null;
+        estimatedStartTime: Date | null;
+        estimatedEndTime: Date | null;
+        actualStartTime: Date | null;
+        actualEndTime: Date | null;
+        notified30m: boolean;
+        notified15m: boolean;
+        barberId: string | null;
+        customerId: string | null;
+        serviceId: string;
+    }>;
+}

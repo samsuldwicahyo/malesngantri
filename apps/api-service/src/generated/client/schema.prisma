@@ -1,0 +1,236 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/client"
+  binaryTargets = ["native", "windows"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://admin:password123@localhost:5432/barbershop_db?schema=public"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  BARBER
+  CUSTOMER
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_PROGRESS
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+  SKIPPED
+}
+
+enum BarberStatus {
+  AVAILABLE
+  BUSY
+  ON_BREAK
+  OFFLINE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+model Barbershop {
+  id                 String             @id @default(uuid())
+  name               String
+  slug               String             @unique
+  address            String?
+  logoUrl            String?
+  timezone           String             @default("Asia/Jakarta")
+  subscriptionStatus SubscriptionStatus @default(ACTIVE)
+  settings           Json               @default("{}")
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  users         User[]
+  barbers       Barber[]
+  services      Service[]
+  subscriptions BarbershopSubscription[]
+  queues        Queue[]
+  reviews       Review[]
+  analytics     AnalyticsDaily[]
+}
+
+model User {
+  id           String    @id @default(uuid())
+  barbershopId String?
+  fullName     String
+  email        String    @unique
+  phoneNumber  String    @unique
+  passwordHash String
+  role         UserRole
+  fcmToken     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  barbershop  Barbershop?    @relation(fields: [barbershopId], references: [id])
+  barberInfo  Barber?        @relation("BarberUser")
+  queues      Queue[]
+  reviews     Review[]
+  changedLogs QueueHistory[] @relation("ChangedBy")
+}
+
+model Barber {
+  id             String       @id @default(uuid())
+  barbershopId   String
+  userId         String       @unique
+  displayName    String?
+  specialization String?
+  status         BarberStatus @default(OFFLINE)
+  commissionRate Float?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  barbershop Barbershop       @relation(fields: [barbershopId], references: [id])
+  user       User             @relation("BarberUser", fields: [userId], references: [id])
+  services   BarberService[]
+  schedules  BarberSchedule[]
+  queues     Queue[]
+  reviews    Review[]
+
+  @@unique([barbershopId, userId])
+}
+
+model Service {
+  id              String    @id @default(uuid())
+  barbershopId    String
+  name            String
+  description     String?
+  durationMinutes Int
+  price           Float
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  barbershop Barbershop      @relation(fields: [barbershopId], references: [id])
+  barbers    BarberService[]
+  queues     Queue[]
+}
+
+model BarberService {
+  barberId              String
+  serviceId             String
+  customDurationMinutes Int?
+
+  barber  Barber  @relation(fields: [barberId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@id([barberId, serviceId])
+}
+
+model Queue {
+  id                 String      @id @default(uuid())
+  barbershopId       String
+  barberId           String?
+  customerId         String?
+  guestName          String?
+  serviceId          String
+  status             QueueStatus @default(WAITING)
+  bookingSource      String      @default("APP")
+  scheduledTime      DateTime?
+  estimatedStartTime DateTime?
+  estimatedEndTime   DateTime?
+  actualStartTime    DateTime?
+  actualEndTime      DateTime?
+  notified30m        Boolean     @default(false)
+  notified15m        Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  deletedAt          DateTime?
+
+  barbershop Barbershop     @relation(fields: [barbershopId], references: [id])
+  barber     Barber?        @relation(fields: [barberId], references: [id])
+  customer   User?          @relation(fields: [customerId], references: [id])
+  service    Service        @relation(fields: [serviceId], references: [id])
+  history    QueueHistory[]
+  reviews    Review[]
+}
+
+model QueueHistory {
+  id             String       @id @default(uuid())
+  queueId        String
+  previousStatus QueueStatus?
+  newStatus      QueueStatus
+  changedById    String?
+  notes          String?
+  createdAt      DateTime     @default(now())
+
+  queue     Queue @relation(fields: [queueId], references: [id])
+  changedBy User? @relation("ChangedBy", fields: [changedById], references: [id])
+}
+
+model Review {
+  id           String   @id @default(uuid())
+  barbershopId String
+  barberId     String?
+  customerId   String
+  queueId      String?  @unique
+  rating       Int
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id])
+  barber     Barber?    @relation(fields: [barberId], references: [id])
+  customer   User       @relation(fields: [customerId], references: [id])
+  queue      Queue?     @relation(fields: [queueId], references: [id])
+}
+
+model BarberSchedule {
+  id        String  @id @default(uuid())
+  barberId  String
+  dayOfWeek Int // 0-6
+  startTime String // "09:00"
+  endTime   String // "17:00"
+  isActive  Boolean @default(true)
+
+  barber Barber @relation(fields: [barberId], references: [id])
+}
+
+model SubscriptionPlan {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Float
+  features    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BarbershopSubscription {
+  id           String             @id @default(uuid())
+  barbershopId String
+  planId       String
+  status       SubscriptionStatus @default(ACTIVE)
+  startDate    DateTime           @default(now())
+  endDate      DateTime
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id])
+}
+
+model AnalyticsDaily {
+  id           String   @id @default(uuid())
+  barbershopId String
+  date         DateTime @db.Date
+  totalQueues  Int      @default(0)
+  totalRevenue Float    @default(0)
+  data         Json     @default("{}")
+
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id])
+
+  @@unique([barbershopId, date])
+}

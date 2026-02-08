@@ -1,0 +1,41 @@
+﻿npx : Environment 
+variables loaded 
+from .env
+At line:1 char:1
++ npx prisma 
+generate > 
+prisma_error.txt 
+2>&1; Get-Content 
+prisma_error ...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Environ   
+ ment variables l    
+oaded from .env:    
+String) [], Remo    
+teException
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+Prisma schema loaded from prisma\schema.prisma
+Error: 
+Cannot find module 'D
+:\project\antrian-bar
+bershop\malasngantrib
+arber\apps\api-servic
+e\node_modules\@prism
+a\client\runtime\quer
+y_engine_bg.postgresq
+l.wasm-base64.js'
+Require stack:
+- D:\project\antrian-
+barbershop\malasngant
+ribarber\apps\api-ser
+vice\node_modules\pri
+sma\build\index.js
+
+

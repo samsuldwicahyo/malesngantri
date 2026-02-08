@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  BARBER
+  CUSTOMER
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_PROGRESS
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+  SKIPPED
+}
+
+enum BarberStatus {
+  AVAILABLE
+  BUSY
+  ON_BREAK
+  OFFLINE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+model Barbershop {
+  id                 String               @id @default(uuid())
+  name               String
+  slug               String               @unique
+  address            String?
+  logoUrl            String?
+  timezone           String               @default("Asia/Jakarta")
+  subscriptionStatus SubscriptionStatus   @default(ACTIVE)
+  settings           Json                 @default("{}")
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+
+  users         User[]                   @relation("BarbershopUsers")
+  barbers       Barber[]                 @relation("BarbershopBarbers")
+  services      Service[]                @relation("BarbershopServices")
+  subscriptions BarbershopSubscription[]
+  queues        Queue[]                  @relation("BarbershopQueues")
+  reviews       Review[]                 @relation("BarbershopReviews")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  barbershopId String?
+  fullName     String
+  email        String    @unique
+  phoneNumber  String    @unique
+  passwordHash String
+  role         UserRole  @default(CUSTOMER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  barbershop Barbershop? @relation("BarbershopUsers", fields: [barbershopId], references: [id])
+  queues     Queue[]      @relation("UserQueues")
+  reviews    Review[]     @relation("UserReviews")
+  barberInfo Barber?      @relation("BarberUser")
+}
+
+model SubscriptionPlan {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Float
+  features    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Barber {
+  id              String   @id @default(cuid())
+  userId          String   @unique // FK to User
+  barbershopId    String   // FK to Barbershop (tenant)
+  name            String
+  nickname        String?
+  phone           String
+  email           String?
+  photoUrl        String?
+  bio             String?  @db.Text
+  specializations String[] // ["Haircut", "Shaving", "Coloring"]
+  experienceYears Int      @default(0)
+
+  // Commission
+  commissionType  String   // "PERCENTAGE", "FIXED", "COMBINED"
+  commissionValue Float    // 40 (for 40%) or fixed amount
+  commissionBase  Float?   // for COMBINED type
+
+  // Status
+  status          String   @default("AVAILABLE") // AVAILABLE, BUSY, ON_BREAK, OFFLINE
+  isActive        Boolean  @default(true)
+
+  // Performance metrics (denormalized for quick access)
+  totalCustomers  Int      @default(0)
+  averageRating   Float    @default(0)
+  totalReviews    Int      @default(0)
+
+  // Relations
+  user       User       @relation("BarberUser", fields: [userId], references: [id])
+  barbershop Barbershop @relation("BarbershopBarbers", fields: [barbershopId], references: [id])
+  services   BarberService[]
+  schedules  BarberSchedule[]
+  queues     Queue[]          @relation("BarberQueues")
+  reviews    Review[]         @relation("BarberReviews")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([barbershopId])
+  @@index([userId])
+}
+
+model Service {
+  id             String   @id @default(cuid())
+  barbershopId   String
+  name           String
+  description    String?
+  price          Float
+  duration       Int      // estimated duration in minutes
+  isActive       Boolean  @default(true)
+  
+  barbershop     Barbershop @relation("BarbershopServices", fields: [barbershopId], references: [id])
+  barberServices BarberService[]
+  queues         Queue[]    @relation("ServiceQueues")
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model BarberService {
+  barberId  String
+  serviceId String
+
+  barber  Barber  @relation(fields: [barberId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@id([barberId, serviceId])
+}
+
+model Queue {
+  id                String      @id @default(cuid())
+  queueNumber       String      // "A001", "A002", generated
+  barbershopId      String      // FK
+  barberId          String      // FK
+  customerId        String?     // FK to User (null for walk-in)
+  serviceId         String      // FK
+  
+  // Customer info (for walk-in without account)
+  customerName      String
+  customerPhone     String?
+  
+  // Booking
+  bookingType       String      // "ONLINE" or "WALK_IN"
+  scheduledDate     DateTime    // date of appointment
+  scheduledTime     String?     // "14:00" (optional, for future booking)
+  
+  // Queue position & timing
+  position          Int         // position in queue for this barber
+  estimatedStart    DateTime    // calculated start time
+  estimatedDuration Int         // in minutes (from service duration)
+  estimatedEnd      DateTime    // calculated end time
+  
+  // Actual timing (tracked by barber)
+  actualStart       DateTime?
+  actualEnd         DateTime?
+  actualDuration    Int?        // in minutes
+  
+  // Status
+  status            QueueStatus @default(WAITING)
+  statusChangedAt   DateTime    @default(now())
+  
+  // Cancellation
+  cancelReason      String?
+  cancelledBy       String?     // userId who cancelled
+  
+  // Notification tracking
+  remindedH1        Boolean     @default(false)
+  remindedT30       Boolean     @default(false)
+  remindedT15       Boolean     @default(false)
+
+  // Relations
+  barbershop        Barbershop  @relation("BarbershopQueues", fields: [barbershopId], references: [id])
+  barber            Barber      @relation("BarberQueues", fields: [barberId], references: [id])
+  customer          User?       @relation("UserQueues", fields: [customerId], references: [id])
+  service           Service     @relation("ServiceQueues", fields: [serviceId], references: [id])
+  history           QueueHistory[]
+  notifications     Notification[]
+  
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  @@index([barbershopId, scheduledDate, status])
+  @@index([barberId, status])
+  @@index([customerId])
+}
+
+model QueueHistory {
+  id          String   @id @default(cuid())
+  queueId     String
+  status      String
+  changedBy   String?  // userId
+  note        String?
+  timestamp   DateTime @default(now())
+  
+  queue       Queue    @relation(fields: [queueId], references: [id])
+  
+  @@index([queueId])
+}
+
+model Review {
+  id           String   @id @default(uuid())
+  barbershopId String
+  customerId   String
+  barberId     String?
+  rating       Int
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  barbershop Barbershop @relation("BarbershopReviews", fields: [barbershopId], references: [id])
+  customer   User       @relation("UserReviews", fields: [customerId], references: [id])
+  barber     Barber?    @relation("BarberReviews", fields: [barberId], references: [id])
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  queueId      String
+  type         String   // BOOKING_CONFIRMATION, T_MINUS_30, T_MINUS_15, NEXT_IN_LINE, YOUR_TURN, POST_SERVICE
+  recipient    String   // phone number
+  message      String   @db.Text
+  status       String   // SENT, FAILED, PENDING
+  errorMessage String?
+  sentAt       DateTime @default(now())
+  
+  queue        Queue    @relation(fields: [queueId], references: [id])
+  
+  @@index([queueId])
+  @@index([type])
+}
+
+model BarberSchedule {
+  id        String  @id @default(cuid())
+  barberId  String
+  dayOfWeek Int // 0=Sunday, 1=Monday, ..., 6=Saturday
+  startTime String // "09:00"
+  endTime   String // "18:00"
+  isWorkDay Boolean @default(true)
+
+  barber Barber @relation(fields: [barberId], references: [id])
+
+  @@index([barberId])
+}
+
+model BarbershopSubscription {
+  id           String             @id @default(cuid())
+  barbershopId String
+  status       SubscriptionStatus @default(ACTIVE)
+  startDate    DateTime           @default(now())
+  endDate      DateTime
+
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id])
+}

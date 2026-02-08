@@ -1,0 +1,72 @@
+import { PrismaService } from '../prisma/prisma.service';
+export declare class QueuesService {
+    private prisma;
+    constructor(prisma: PrismaService);
+    joinQueue(data: {
+        barbershopId: string;
+        barberId?: string;
+        serviceId: string;
+        customerId?: string;
+        guestName?: string;
+    }): Promise<{
+        id: string;
+        barbershopId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+        status: import(".prisma/client").$Enums.QueueStatus;
+        guestName: string | null;
+        bookingSource: string;
+        scheduledTime: Date | null;
+        estimatedStartTime: Date | null;
+        estimatedEndTime: Date | null;
+        actualStartTime: Date | null;
+        actualEndTime: Date | null;
+        notified30m: boolean;
+        notified15m: boolean;
+        barberId: string | null;
+        customerId: string | null;
+        serviceId: string;
+    }>;
+    startService(queueId: string): Promise<{
+        id: string;
+        barbershopId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+        status: import(".prisma/client").$Enums.QueueStatus;
+        guestName: string | null;
+        bookingSource: string;
+        scheduledTime: Date | null;
+        estimatedStartTime: Date | null;
+        estimatedEndTime: Date | null;
+        actualStartTime: Date | null;
+        actualEndTime: Date | null;
+        notified30m: boolean;
+        notified15m: boolean;
+        barberId: string | null;
+        customerId: string | null;
+        serviceId: string;
+    }>;
+    completeService(queueId: string): Promise<{
+        id: string;
+        barbershopId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+        status: import(".prisma/client").$Enums.QueueStatus;
+        guestName: string | null;
+        bookingSource: string;
+        scheduledTime: Date | null;
+        estimatedStartTime: Date | null;
+        estimatedEndTime: Date | null;
+        actualStartTime: Date | null;
+        actualEndTime: Date | null;
+        notified30m: boolean;
+        notified15m: boolean;
+        barberId: string | null;
+        customerId: string | null;
+        serviceId: string;
+    }>;
+    private recalculateBarberQueues;
+}
