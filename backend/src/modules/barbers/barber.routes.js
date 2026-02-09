@@ -15,6 +15,14 @@ router.post(
     barberController.createBarber
 );
 
+// Compat: create barber without barbershopId
+router.post(
+    '/barbers',
+    authenticate,
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    barberController.createBarberForAdmin
+);
+
 router.get(
     '/barbershops/:barbershopId/barbers',
     authenticate,
@@ -45,6 +53,14 @@ router.delete(
     authorize('ADMIN', 'SUPER_ADMIN'),
     validateBarbershopOwnership,
     barberController.deleteBarber
+);
+
+// Compat: delete barber without barbershopId
+router.delete(
+    '/barbers/:barberId',
+    authenticate,
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    barberController.deleteBarberSimple
 );
 
 router.put(
@@ -86,11 +102,33 @@ router.get(
     barberController.getMySchedule
 );
 
+router.get(
+    '/me/stats',
+    authenticate,
+    authorize('BARBER'),
+    barberController.getMyStats
+);
+
 router.patch(
     '/me/status',
     authenticate,
     authorize('BARBER'),
     barberController.updateMyStatus
+);
+
+// Compat: barber queues and services
+router.get(
+    '/:barberId/queues',
+    authenticate,
+    authorize('BARBER', 'ADMIN', 'SUPER_ADMIN'),
+    barberController.getBarberQueuesCompat
+);
+
+router.get(
+    '/:barberId/services',
+    authenticate,
+    authorize('BARBER', 'ADMIN', 'SUPER_ADMIN'),
+    barberController.getBarberServices
 );
 
 module.exports = router;

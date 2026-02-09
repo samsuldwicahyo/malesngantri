@@ -4,6 +4,11 @@ const { authenticate, authorize } = require('../../middlewares/auth.middleware')
 
 const router = express.Router();
 
+// --- Public (Guest) Routes ---
+router.post('/public', queueController.createPublicQueue);
+router.get('/public/:id', queueController.getPublicQueue);
+router.post('/public/:id/cancel', queueController.cancelPublicQueue);
+
 // --- Customer & Shared Routes ---
 router.post(
     '/',
@@ -17,6 +22,13 @@ router.get(
     authenticate,
     authorize('CUSTOMER'),
     queueController.getMyQueue
+);
+
+router.get(
+    '/history',
+    authenticate,
+    authorize('CUSTOMER'),
+    queueController.getQueueHistory
 );
 
 // --- Barber & Admin Routes ---

@@ -30,6 +30,7 @@ import GlobalSettings from './Settings/GlobalSettings';
 import FeatureFlags from './Settings/FeatureFlags';
 import NotificationTemplates from './Settings/NotificationTemplates';
 import SupportTickets from './Support/SupportTickets';
+import BrandMark from '../../components/BrandMark';
 
 const SuperAdminDashboard = () => {
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -93,13 +94,13 @@ const SuperAdminDashboard = () => {
                     {/* Logo */}
                     <div className="p-6 border-b border-gray-700">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-amber-600 rounded-lg flex items-center justify-center">
-                                <span className="text-white font-bold text-xl">M</span>
-                            </div>
+                            <BrandMark className="w-10 h-10" />
                             {sidebarOpen && (
                                 <div>
-                                    <h1 className="text-white font-bold">MALASNGANTRI</h1>
-                                    <p className="text-xs text-gray-400">Super Admin</p>
+                                    <h1 className="text-white font-black tracking-tight">
+                                        MALAS<span className="text-amber-500">NGANTRI</span>
+                                    </h1>
+                                    <p className="text-xs text-gray-400 uppercase tracking-widest">Super Admin</p>
                                 </div>
                             )}
                         </div>

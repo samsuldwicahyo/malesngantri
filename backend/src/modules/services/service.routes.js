@@ -13,6 +13,14 @@ router.post(
     serviceController.createService
 );
 
+// Compat: create service without barbershopId
+router.post(
+    '/services',
+    authenticate,
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    serviceController.createServiceForAdmin
+);
+
 router.get(
     '/barbershops/:barbershopId/services',
     serviceController.getServices
@@ -24,6 +32,28 @@ router.put(
     authorize('ADMIN', 'SUPER_ADMIN'),
     validateBarbershopOwnership,
     serviceController.updateService
+);
+
+// Compat: service CRUD by id
+router.get(
+    '/services/:id',
+    authenticate,
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    serviceController.getServiceById
+);
+
+router.put(
+    '/services/:id',
+    authenticate,
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    serviceController.updateServiceById
+);
+
+router.delete(
+    '/services/:id',
+    authenticate,
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    serviceController.deleteServiceById
 );
 
 module.exports = router;

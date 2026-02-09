@@ -27,6 +27,7 @@ import CustomerList from './Customers/CustomerList';
 import Reports from './Analytics/Reports';
 import BarbershopSettings from './Settings/Barbershop';
 import SubscriptionInfo from './Settings/Subscription';
+import BrandMark from '../../components/BrandMark';
 
 const AdminDashboard = () => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -70,9 +71,14 @@ const AdminDashboard = () => {
                     {/* Logo */}
                     <div className="p-6 border-b border-gray-700">
                         <div className="flex items-center justify-between">
-                            <div>
-                                <h1 className="text-2xl font-bold text-amber-500">💈 MALASNGANTRI</h1>
-                                <p className="text-sm text-gray-400 mt-1">Admin Dashboard</p>
+                            <div className="flex items-center gap-3">
+                                <BrandMark className="w-10 h-10" />
+                                <div>
+                                    <h1 className="text-lg font-black text-white tracking-tight">
+                                        MALAS<span className="text-amber-500">NGANTRI</span>
+                                    </h1>
+                                    <p className="text-xs text-gray-400 mt-1 uppercase tracking-widest">Admin Dashboard</p>
+                                </div>
                             </div>
                             <button
                                 onClick={() => setSidebarOpen(false)}

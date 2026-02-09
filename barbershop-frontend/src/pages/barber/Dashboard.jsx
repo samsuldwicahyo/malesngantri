@@ -9,6 +9,7 @@ import apiClient from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket } from '../../contexts/SocketContext';
 import toast from 'react-hot-toast';
+import BrandMark from '../../components/BrandMark';
 
 // Sub pages
 import Queue from './Queue';
@@ -124,6 +125,8 @@ const BarberDashboard = () => {
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
+                            <BrandMark className="w-10 h-10" />
+                            <div className="w-px h-10 bg-gray-700/60" />
                             <img
                                 src={barberProfile?.photoUrl || '/placeholder-barber.jpg'}
                                 alt={barberProfile?.name}

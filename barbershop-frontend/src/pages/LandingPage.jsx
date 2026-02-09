@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 export const LandingPage = () => {
     return (
         <div className="min-h-screen bg-mesh flex flex-col items-center justify-center p-6 relative overflow-hidden">

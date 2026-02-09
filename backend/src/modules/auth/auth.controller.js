@@ -1,6 +1,7 @@
 const prisma = require('../../config/database');
 const authService = require('./auth.service');
-const { registerSchema, loginSchema, refreshTokenSchema } = require('./auth.validation');
+const { registerSchema, customerRegisterSchema, loginSchema, refreshTokenSchema } = require('./auth.validation');
+const otpService = require('../../services/otp.service');
 
 /**
  * Register a new Barbershop Owner
@@ -83,6 +84,64 @@ const register = async (req, res, next) => {
 };
 
 /**
+ * Register a new Customer
+ */
+const registerCustomer = async (req, res, next) => {
+    try {
+        const { error, value } = customerRegisterSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: error.details[0].message }
+            });
+        }
+
+        const { fullName, email, phoneNumber, password } = value;
+
+        const existingUser = await prisma.user.findFirst({
+            where: { OR: [{ email }, { phoneNumber }] }
+        });
+        if (existingUser) {
+            return res.status(409).json({
+                success: false,
+                error: { code: 'USER_EXISTS', message: 'User with this email or phone already exists' }
+            });
+        }
+
+        const passwordHash = await authService.hashPassword(password);
+        const user = await prisma.user.create({
+            data: {
+                fullName,
+                email,
+                phoneNumber,
+                passwordHash,
+                role: 'CUSTOMER'
+            }
+        });
+
+        const accessToken = authService.generateAccessToken(user.id, user.role);
+        const refreshToken = authService.generateRefreshToken(user.id);
+
+        res.status(201).json({
+            success: true,
+            message: 'Customer registration successful',
+            data: {
+                user: {
+                    id: user.id,
+                    fullName: user.fullName,
+                    email: user.email,
+                    role: user.role
+                },
+                accessToken,
+                refreshToken
+            }
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
  * Login user
  */
 const login = async (req, res, next) => {
@@ -127,6 +186,85 @@ const login = async (req, res, next) => {
                 refreshToken
             }
         });
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Request OTP for phone verification (Customer only)
+ */
+const requestOtp = async (req, res, next) => {
+    try {
+        const user = req.user;
+        if (!user || user.role !== 'CUSTOMER') {
+            return res.status(403).json({
+                success: false,
+                error: { code: 'FORBIDDEN', message: 'Customer only' }
+            });
+        }
+
+        if (!user.phoneNumber) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'PHONE_REQUIRED', message: 'Phone number required' }
+            });
+        }
+
+        const code = otpService.generateCode();
+        otpService.saveOtp(user.phoneNumber, code);
+
+        // TODO: integrate WhatsApp provider
+        console.log(`[OTP] Phone: ${user.phoneNumber} Code: ${code}`);
+
+        res.json({ success: true, message: 'OTP sent' });
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Verify OTP for phone verification
+ */
+const verifyOtp = async (req, res, next) => {
+    try {
+        const user = req.user;
+        if (!user || user.role !== 'CUSTOMER') {
+            return res.status(403).json({
+                success: false,
+                error: { code: 'FORBIDDEN', message: 'Customer only' }
+            });
+        }
+
+        if (!user.phoneNumber) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'PHONE_REQUIRED', message: 'Phone number required' }
+            });
+        }
+
+        const { code } = req.body || {};
+        if (!code) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'OTP code required' }
+            });
+        }
+
+        const result = otpService.verifyOtp(user.phoneNumber, code);
+        if (!result.ok) {
+            return res.status(400).json({
+                success: false,
+                error: { code: result.reason, message: 'OTP invalid or expired' }
+            });
+        }
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { phoneVerified: true, phoneVerifiedAt: new Date() }
+        });
+
+        res.json({ success: true, message: 'Phone verified' });
     } catch (err) {
         next(err);
     }
@@ -205,8 +343,11 @@ const logout = async (req, res) => {
 
 module.exports = {
     register,
+    registerCustomer,
     login,
     refreshToken,
     me,
-    logout
+    logout,
+    requestOtp,
+    verifyOtp
 };

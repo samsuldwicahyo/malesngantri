@@ -8,7 +8,7 @@ import { LockClosedIcon, EnvelopeIcon, ArrowLeftIcon } from '@heroicons/react/24
 import toast from 'react-hot-toast';
 
 const schema = yup.object().shape({
-    username: yup.string().required('Username atau Email wajib diisi'),
+    email: yup.string().required('Username atau Email wajib diisi'),
     password: yup.string().min(6, 'Password minimal 6 karakter').required('Password wajib diisi'),
 });
 
@@ -26,12 +26,19 @@ const LoginPage = () => {
         setIsLoading(true);
         setError(null);
         try {
-            const result = await login(data);
+            const result = await login({
+                email: data.email,
+                password: data.password
+            });
             toast.success('Login berhasil!');
 
             const role = result.user.role;
-            if (role === 'CUSTOMER') navigate('/customer');
-            else if (role === 'BARBER') navigate('/barber');
+            if (role === 'CUSTOMER') {
+                const publicUrl = import.meta.env.VITE_PUBLIC_URL || 'http://localhost:3001';
+                window.location.href = publicUrl;
+                return;
+            }
+            if (role === 'BARBER') navigate('/barber');
             else if (role === 'ADMIN') navigate('/admin');
             else if (role === 'SUPER_ADMIN') navigate('/super-admin');
         } catch (err) {
@@ -75,12 +82,12 @@ const LoginPage = () => {
                             <div className="relative group">
                                 <EnvelopeIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-500 group-focus-within:text-amber-500 transition-colors" />
                                 <input
-                                    {...register('username')}
+                                    {...register('email')}
                                     className="w-full pl-11 pr-4 py-3.5 bg-gray-900/50 border border-gray-700/50 rounded-xl text-white focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition-all outline-none placeholder:text-gray-600"
                                     placeholder="Masukkan username atau email"
                                 />
-                                {errors.username && (
-                                    <p className="text-red-500 text-xs mt-1 ml-1">{errors.username.message}</p>
+                                {errors.email && (
+                                    <p className="text-red-500 text-xs mt-1 ml-1">{errors.email.message}</p>
                                 )}
                             </div>
                         </div>

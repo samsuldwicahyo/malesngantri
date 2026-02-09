@@ -76,7 +76,9 @@ const updateUser = async (id, data) => {
             fullName: true,
             email: true,
             phoneNumber: true,
-            role: true
+            role: true,
+            phoneVerified: true,
+            phoneVerifiedAt: true
         }
     });
 };

@@ -67,6 +67,8 @@ model User {
   phoneNumber  String    @unique
   passwordHash String
   role         UserRole  @default(CUSTOMER)
+  phoneVerified Boolean  @default(false)
+  phoneVerifiedAt DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?

@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import {
     Star,
     MapPin,
@@ -14,26 +15,61 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+type Barbershop = {
+    id: string;
+    name: string;
+    address?: string | null;
+    phoneNumber?: string | null;
+    averageRating?: number;
+    totalReviews?: number;
+    openingTime?: string;
+    closingTime?: string;
+    description?: string | null;
+};
+
+type Service = {
+    id: string;
+    name: string;
+    price: number;
+    duration: number;
+    description?: string | null;
+};
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api/v1';
+
 export default function BarbershopProfilePage() {
     const { slug } = useParams();
+    const [shopData, setShopData] = useState<Barbershop | null>(null);
+    const [services, setServices] = useState<Service[]>([]);
+    const [error, setError] = useState('');
 
-    // Mock data for initial UI build
-    const shopData = {
-        name: "Classic Cut Barbershop",
-        rating: 4.9,
-        reviews: 128,
-        address: "123 Grooming St, Suite 101, New York",
-        phone: "+1 (555) 000-CUTS",
-        hours: "Open until 9:00 PM",
-        description: "Experience the art of traditional grooming combined with modern style. Our master barbers are dedicated to making you look your best.",
-    };
+    useEffect(() => {
+        if (typeof slug !== 'string') return;
+        const load = async () => {
+            try {
+                setError('');
+                const shopRes = await fetch(`${API_BASE_URL}/barbershops/slug/${slug}`);
+                const shopJson = await shopRes.json();
+                if (!shopRes.ok) {
+                    throw new Error(shopJson?.error?.message || 'Barbershop tidak ditemukan');
+                }
 
-    const services = [
-        { name: "Executive Haircut", price: "$45", duration: "45m", icon: <Sparkles className="text-amber-500" /> },
-        { name: "Beard Sculpture", price: "$30", duration: "30m", icon: <ShieldCheck className="text-amber-500" /> },
-        { name: "Royal Shave", price: "$40", duration: "40m", icon: <Sparkles className="text-amber-500" /> },
-        { name: "The Works", price: "$85", duration: "90m", icon: <Check className="text-amber-500" /> },
-    ];
+                setShopData(shopJson.data);
+
+                const serviceRes = await fetch(`${API_BASE_URL}/barbershops/${shopJson.data.id}/services`);
+                const serviceJson = await serviceRes.json();
+                if (!serviceRes.ok) {
+                    throw new Error(serviceJson?.error?.message || 'Gagal memuat layanan');
+                }
+                setServices(serviceJson.data || []);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : 'Gagal memuat data';
+                setError(message);
+            }
+        };
+
+        load();
+    }, [slug]);
 
     return (
         <div className="min-h-screen bg-black text-white font-sans selection:bg-amber-500/30">
@@ -53,15 +89,15 @@ export default function BarbershopProfilePage() {
                                 <div className="flex items-center gap-2">
                                     <div className="flex items-center gap-1 bg-amber-500/10 text-amber-500 px-3 py-1 rounded-full text-sm font-bold border border-amber-500/20">
                                         <Star size={14} fill="currentColor" />
-                                        {shopData.rating}
+                                        {shopData?.averageRating?.toFixed(1) || '0.0'}
                                     </div>
-                                    <span className="text-neutral-500 text-sm">{shopData.reviews} reviews</span>
+                                    <span className="text-neutral-500 text-sm">{shopData?.totalReviews || 0} reviews</span>
                                 </div>
-                                <h1 className="text-4xl md:text-6xl font-black tracking-tighter">{shopData.name}</h1>
+                                <h1 className="text-4xl md:text-6xl font-black tracking-tighter">{shopData?.name || 'Barbershop'}</h1>
                                 <div className="flex flex-wrap gap-4 text-neutral-400 text-sm">
-                                    <span className="flex items-center gap-1"><MapPin size={16} /> {shopData.address}</span>
-                                    <span className="flex items-center gap-1"><Clock size={16} /> {shopData.hours}</span>
-                                    <span className="flex items-center gap-1"><Phone size={16} /> {shopData.phone}</span>
+                                    <span className="flex items-center gap-1"><MapPin size={16} /> {shopData?.address || '-'}</span>
+                                    <span className="flex items-center gap-1"><Clock size={16} /> {shopData?.openingTime || '09:00'} - {shopData?.closingTime || '18:00'}</span>
+                                    <span className="flex items-center gap-1"><Phone size={16} /> {shopData?.phoneNumber || '-'}</span>
                                 </div>
                             </div>
 
@@ -75,8 +111,13 @@ export default function BarbershopProfilePage() {
                         </div>
 
                         <div className="mt-8 pt-8 border-t border-white/5 text-neutral-400 leading-relaxed max-w-2xl">
-                            {shopData.description}
+                            {shopData?.description || 'Barbershop terbaik untuk gaya rambut dan perawatan pria.'}
                         </div>
+                        {error ? (
+                            <div className="mt-6 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-300">
+                                {error}
+                            </div>
+                        ) : null}
                     </div>
 
                     {/* Services Grid */}
@@ -90,15 +131,15 @@ export default function BarbershopProfilePage() {
                                 >
                                     <div className="flex items-center gap-4">
                                         <div className="w-12 h-12 rounded-2xl bg-neutral-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                            {s.icon}
+                                            {i % 2 === 0 ? <Sparkles className="text-amber-500" /> : <ShieldCheck className="text-amber-500" />}
                                         </div>
                                         <div>
                                             <h4 className="font-bold text-lg">{s.name}</h4>
-                                            <p className="text-neutral-500 text-sm">{s.duration}</p>
+                                            <p className="text-neutral-500 text-sm">{s.duration}m</p>
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-xl font-black text-white">{s.price}</div>
+                                        <div className="text-xl font-black text-white">Rp {s.price.toLocaleString('id-ID')}</div>
                                     </div>
                                 </div>
                             ))}

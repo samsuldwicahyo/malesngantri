@@ -306,7 +306,7 @@ async function getMyQueue(customerId) {
         include: {
             service: true,
             barber: true,
-            barbershop: { select: { name: true, address: true, phoneNumber: true } }
+            barbershop: { select: { name: true, address: true, phoneNumber: true, slug: true } }
         },
         orderBy: { createdAt: 'desc' }
     });

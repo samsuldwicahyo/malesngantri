@@ -13,6 +13,16 @@ const registerSchema = Joi.object({
 });
 
 /**
+ * Customer registration schema
+ */
+const customerRegisterSchema = Joi.object({
+    fullName: Joi.string().trim().min(3).max(100).required(),
+    email: Joi.string().email().required(),
+    phoneNumber: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
+    password: Joi.string().min(8).required()
+});
+
+/**
  * Login validation schema
  */
 const loginSchema = Joi.object({
@@ -29,6 +39,7 @@ const refreshTokenSchema = Joi.object({
 
 module.exports = {
     registerSchema,
+    customerRegisterSchema,
     loginSchema,
     refreshTokenSchema
 };

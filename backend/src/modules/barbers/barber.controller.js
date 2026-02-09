@@ -7,6 +7,7 @@ const {
     scheduleItemSchema
 } = require('./barber.validation');
 const Joi = require('joi');
+const prisma = require('../../config/database');
 
 /**
  * Handle success responses consistently
@@ -35,6 +36,34 @@ const createBarber = async (req, res, next) => {
         const { barbershopId } = req.params;
         const result = await barberService.createBarber(barbershopId, value);
 
+        sendSuccess(res, result, 'Barber created successfully', 201);
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Create barber using admin's barbershop (compat endpoint: POST /barbers)
+ */
+const createBarberForAdmin = async (req, res, next) => {
+    try {
+        const { error, value } = createBarberSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: error.details[0].message }
+            });
+        }
+
+        const barbershopId = req.user.barbershopId;
+        if (!barbershopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'BARBERSHOP_REQUIRED', message: 'Barbershop is required for admin' }
+            });
+        }
+
+        const result = await barberService.createBarber(barbershopId, value);
         sendSuccess(res, result, 'Barber created successfully', 201);
     } catch (err) {
         next(err);
@@ -105,6 +134,95 @@ const deleteBarber = async (req, res, next) => {
         const { barberId, barbershopId } = req.params;
         await barberService.deleteBarber(barberId, barbershopId);
         sendSuccess(res, null, 'Barber deleted successfully (soft delete)');
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Delete barber using admin's barbershop (compat endpoint: DELETE /barbers/:barberId)
+ */
+const deleteBarberSimple = async (req, res, next) => {
+    try {
+        const { barberId } = req.params;
+        const barbershopId = req.user.barbershopId;
+        await barberService.deleteBarber(barberId, barbershopId);
+        sendSuccess(res, null, 'Barber deleted successfully (soft delete)');
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Get barber stats (compat endpoint: GET /barbers/me/stats)
+ */
+const getMyStats = async (req, res, next) => {
+    try {
+        const barber = await barberService.getBarberByUserId(req.user.id);
+        if (!barber) {
+            return res.status(404).json({
+                success: false,
+                error: { code: 'NOT_FOUND', message: 'Barber profile not found' }
+            });
+        }
+
+        const totalQueues = await prisma.queue.count({ where: { barberId: barber.id } });
+        const completedQueues = await prisma.queue.count({
+            where: { barberId: barber.id, status: 'COMPLETED' }
+        });
+
+        sendSuccess(res, {
+            totalQueues,
+            completedQueues,
+            averageRating: barber.averageRating || 0,
+            totalReviews: barber.totalReviews || 0
+        }, 'Stats fetched');
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Get barber services (compat endpoint: GET /barbers/:barberId/services)
+ */
+const getBarberServices = async (req, res, next) => {
+    try {
+        const { barberId } = req.params;
+        const services = await prisma.barberService.findMany({
+            where: { barberId },
+            include: { service: true }
+        });
+        sendSuccess(res, services.map((item) => item.service), 'Barber services fetched');
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Get barber queues (compat endpoint: GET /barbers/:barberId/queues)
+ */
+const getBarberQueuesCompat = async (req, res, next) => {
+    try {
+        const { barberId } = req.params;
+        const { date, status } = req.query;
+        const dateObj = new Date(date || new Date());
+        const startOfDay = new Date(dateObj.setHours(0, 0, 0, 0));
+        const endOfDay = new Date(dateObj.setHours(23, 59, 59, 999));
+
+        const queues = await prisma.queue.findMany({
+            where: {
+                barberId,
+                scheduledDate: { gte: startOfDay, lte: endOfDay },
+                ...(status && { status })
+            },
+            include: {
+                service: true,
+                customer: { select: { fullName: true, phoneNumber: true } }
+            },
+            orderBy: { position: 'asc' }
+        });
+
+        sendSuccess(res, { queues }, 'Barber queues fetched');
     } catch (err) {
         next(err);
     }
@@ -231,14 +349,19 @@ const updateMyStatus = async (req, res, next) => {
 
 module.exports = {
     createBarber,
+    createBarberForAdmin,
     getAllBarbers,
     getBarberById,
     updateBarber,
     deleteBarber,
+    deleteBarberSimple,
     updateBarberSchedule,
     assignServices,
     getMyProfile,
     updateMyProfile,
     getMySchedule,
-    updateMyStatus
+    updateMyStatus,
+    getMyStats,
+    getBarberServices,
+    getBarberQueuesCompat
 };

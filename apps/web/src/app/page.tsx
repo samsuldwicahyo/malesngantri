@@ -16,8 +16,8 @@ export default function HomePage() {
           <Link href="#about" className="hover:text-amber-500 transition-colors">About</Link>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="/login" className="px-4 py-2 text-sm font-medium hover:text-amber-500 transition-colors">Login</Link>
-          <Link href="/register" className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-2 rounded-full text-sm font-bold transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.3)]">Get Started</Link>
+          <Link href="/auth/login" className="px-4 py-2 text-sm font-medium hover:text-amber-500 transition-colors">Login</Link>
+          <Link href="#explore" className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-2 rounded-full text-sm font-bold transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.3)]">Get Started</Link>
         </div>
       </nav>
 
@@ -39,11 +39,32 @@ export default function HomePage() {
             notifikasi WhatsApp otomatis, dan efisiensi barber yang meningkat.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/booking" className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-black px-10 py-5 rounded-2xl text-lg font-bold transition-all hover:-translate-y-1 shadow-[0_10px_40px_rgba(245,158,11,0.4)]">
+            <Link href="#explore" className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-black px-10 py-5 rounded-2xl text-lg font-bold transition-all hover:-translate-y-1 shadow-[0_10px_40px_rgba(245,158,11,0.4)]">
               Cari Barbershop
             </Link>
-            <Link href="/partner" className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 px-10 py-5 rounded-2xl text-lg font-bold transition-all hover:-translate-y-1">
+            <Link href="#partner" className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 px-10 py-5 rounded-2xl text-lg font-bold transition-all hover:-translate-y-1">
               Daftarkan Barbershop Anda
+            </Link>
+          </div>
+          <div className="mt-10 inline-flex flex-col sm:flex-row items-center justify-center gap-3 rounded-[2rem] border border-white/10 bg-neutral-900/50 px-4 py-3">
+            <span className="text-xs font-black uppercase tracking-widest text-neutral-500">Masuk Sebagai</span>
+            <Link
+              href="/customer"
+              className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 px-6 py-3 rounded-2xl text-sm font-bold transition-all"
+            >
+              Customer
+            </Link>
+            <Link
+              href="/auth/login"
+              className="w-full sm:w-auto bg-amber-500/90 hover:bg-amber-500 text-black px-6 py-3 rounded-2xl text-sm font-black transition-all"
+            >
+              Admin / Barber
+            </Link>
+            <Link
+              href="/super-admin"
+              className="w-full sm:w-auto bg-white text-black px-6 py-3 rounded-2xl text-sm font-black transition-all hover:bg-neutral-200"
+            >
+              Super Admin
             </Link>
           </div>
         </div>
@@ -71,8 +92,53 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Explore */}
+      <section id="explore" className="py-28 px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-12">
+            <div>
+              <h2 className="text-4xl md:text-5xl font-black mb-4 leading-tight">
+                Pilih Barbershop <span className="text-amber-500">Terbaik.</span>
+              </h2>
+              <p className="text-neutral-400 max-w-2xl">
+                Temukan barbershop favorit, lihat layanan, dan ambil nomor antrian langsung dari ponsel Anda.
+              </p>
+            </div>
+            <Link href="#features" className="bg-white/5 hover:bg-white/10 border border-white/10 px-6 py-3 rounded-2xl text-sm font-bold transition-all">
+              Lihat Fitur
+            </Link>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              { name: 'The Gentleman Barber', slug: 'the-gentleman-barber', city: 'Jakarta', rating: '4.9' },
+              { name: 'Classic Cut Studio', slug: 'classic-cut-studio', city: 'Bandung', rating: '4.8' },
+              { name: 'Modern Fade Lab', slug: 'modern-fade-lab', city: 'Surabaya', rating: '4.7' }
+            ].map((shop) => (
+              <Link
+                key={shop.slug}
+                href={`/${shop.slug}`}
+                className="group bg-neutral-900/60 border border-white/5 rounded-[2rem] p-6 hover:border-white/10 transition-all"
+              >
+                <div className="h-40 rounded-2xl bg-neutral-800 mb-5 overflow-hidden">
+                  <div className="w-full h-full bg-[url('https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=800&auto=format&fit=crop')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-black">{shop.name}</h3>
+                  <span className="text-amber-500 font-black text-sm">{shop.rating}</span>
+                </div>
+                <p className="text-neutral-500 text-sm mt-1">{shop.city}</p>
+                <div className="mt-4 inline-flex items-center gap-2 text-amber-500 text-xs font-black uppercase tracking-widest">
+                  Lihat Detail
+                  <span className="w-4 h-[2px] bg-amber-500" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Dynamic Queue Card Demo */}
-      <section className="py-32 px-6">
+      <section id="features" className="py-32 px-6">
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center">
           <div>
             <h2 className="text-4xl md:text-5xl font-black mb-6 leading-tight">
@@ -128,6 +194,76 @@ export default function HomePage() {
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="py-28 px-6 bg-neutral-900/40 border-y border-white/5">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl md:text-5xl font-black mb-4">Pricing for Every Size</h2>
+            <p className="text-neutral-400 max-w-2xl mx-auto">Mulai dari paket hemat hingga enterprise. Upgrade kapan saja.</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              { name: 'Starter', price: 'Gratis', desc: 'Cocok untuk barbershop baru', highlight: false },
+              { name: 'Pro', price: 'Rp 299K', desc: 'Untuk barbershop berkembang', highlight: true },
+              { name: 'Enterprise', price: 'Custom', desc: 'Multi-cabang dan SLA', highlight: false }
+            ].map((tier) => (
+              <div
+                key={tier.name}
+                className={`rounded-[2.5rem] p-8 border ${tier.highlight ? 'border-amber-500/40 bg-amber-500/10' : 'border-white/5 bg-neutral-900/60'} shadow-2xl`}
+              >
+                <div className="text-xs font-black uppercase tracking-widest text-neutral-500">{tier.name}</div>
+                <div className="text-3xl font-black mt-4">{tier.price}</div>
+                <p className="text-neutral-400 mt-3">{tier.desc}</p>
+                <ul className="mt-6 space-y-3 text-sm text-neutral-300">
+                  <li>• Antrian real-time</li>
+                  <li>• Notifikasi otomatis</li>
+                  <li>• Dashboard performa</li>
+                </ul>
+                <Link href="#partner" className="mt-8 inline-flex w-full items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 py-3 rounded-2xl font-bold transition-all">
+                  Pilih Paket
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* About */}
+      <section id="about" className="py-28 px-6">
+        <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
+          <div>
+            <h2 className="text-4xl md:text-5xl font-black mb-6">About MalasNgantri</h2>
+            <p className="text-neutral-400 leading-relaxed">
+              MalasNgantri membantu barbershop mengelola antrian, booking, dan performa barber secara real-time.
+              Dibangun untuk mengurangi waktu tunggu dan meningkatkan pengalaman pelanggan.
+            </p>
+          </div>
+          <div className="bg-neutral-900/60 border border-white/5 rounded-[2.5rem] p-8">
+            <div className="text-sm text-neutral-500 uppercase tracking-widest font-bold mb-3">Why Us</div>
+            <div className="text-xl font-black mb-4">Lebih cepat, lebih rapi, lebih puas.</div>
+            <p className="text-neutral-400">
+              Fokus pada efisiensi operasional dan pengalaman pelanggan dengan tampilan yang modern dan mudah dipakai.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Partner */}
+      <section id="partner" className="py-28 px-6 bg-neutral-900/40 border-t border-white/5">
+        <div className="max-w-5xl mx-auto text-center">
+          <div className="inline-block px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-amber-500 text-xs font-semibold uppercase tracking-widest mb-6">
+            Partner Program
+          </div>
+          <h2 className="text-4xl md:text-5xl font-black mb-6">Daftarkan Barbershop Anda</h2>
+          <p className="text-neutral-400 max-w-2xl mx-auto mb-10">
+            Bergabung sebagai partner dan mulai kelola antrian secara profesional. Kami bantu onboarding dan setup.
+          </p>
+          <Link href="/auth/login" className="bg-amber-500 hover:bg-amber-400 text-black px-10 py-4 rounded-2xl text-lg font-bold transition-all shadow-[0_10px_40px_rgba(245,158,11,0.35)]">
+            Ajukan Partnership
+          </Link>
         </div>
       </section>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import {
     User,
     Lock,
@@ -9,10 +9,77 @@ import {
     Scissors
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const router = useRouter();
+
+    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setError('');
+
+        if (!email.trim() || !password) {
+            setError('Email dan password wajib diisi.');
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok || payload?.success === false) {
+                const message =
+                    payload?.error?.message ||
+                    payload?.message ||
+                    'Email atau password salah.';
+                throw new Error(message);
+            }
+
+            const data = payload?.data ?? payload;
+            const accessToken = data?.accessToken || data?.access_token;
+            const refreshToken = data?.refreshToken;
+
+            if (accessToken) {
+                localStorage.setItem('accessToken', accessToken);
+            }
+            if (refreshToken) {
+                localStorage.setItem('refreshToken', refreshToken);
+            }
+            if (data?.user) {
+                localStorage.setItem('user', JSON.stringify(data.user));
+            }
+
+            const role = data?.user?.role;
+            if (role === 'CUSTOMER') {
+                router.push('/customer');
+                return;
+            }
+            if (role === 'SUPER_ADMIN') {
+                router.push('/super-admin');
+                return;
+            }
+            if (role === 'BARBER') {
+                router.push('/dashboard/barber');
+                return;
+            }
+            router.push('/dashboard/admin');
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Login gagal. Coba lagi.';
+            setError(message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
         <div className="min-h-screen bg-black text-white font-sans selection:bg-amber-500/30 flex items-center justify-center p-6 bg-[url('https://images.unsplash.com/photo-1585747860715-2ba37e788b70?q=80&w=2074&auto=format&fit=crop')] bg-cover bg-center">
@@ -35,7 +102,7 @@ export default function LoginPage() {
                         <p className="text-neutral-500 text-sm">Please enter your credentials to manage your station.</p>
                     </div>
 
-                    <form className="space-y-4">
+                    <form className="space-y-4" onSubmit={handleSubmit}>
                         <div className="space-y-1">
                             <label className="text-[10px] font-black uppercase tracking-widest text-neutral-500 ml-4">Email Address</label>
                             <div className="relative">
@@ -68,6 +135,12 @@ export default function LoginPage() {
                             </div>
                         </div>
 
+                        {error ? (
+                            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-300">
+                                {error}
+                            </div>
+                        ) : null}
+
                         <div className="flex items-center justify-between px-2 pt-2">
                             <label className="flex items-center gap-2 cursor-pointer group">
                                 <input type="checkbox" className="sr-only peer" />
@@ -80,10 +153,11 @@ export default function LoginPage() {
                         </div>
 
                         <button
-                            type="button"
-                            className="w-full bg-amber-500 hover:bg-amber-600 text-black font-black py-5 rounded-2xl transition-all shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 group mt-8"
+                            type="submit"
+                            disabled={isLoading}
+                            className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-70 disabled:cursor-not-allowed text-black font-black py-5 rounded-2xl transition-all shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 group mt-8"
                         >
-                            Sign In to Station
+                            {isLoading ? 'Signing In...' : 'Sign In to Station'}
                             <ArrowRight className="group-hover:translate-x-1 transition-transform" />
                         </button>
                     </form>
@@ -92,6 +166,12 @@ export default function LoginPage() {
                 <div className="text-center pt-8">
                     <p className="text-neutral-500 text-sm">Don't have a barbershop yet?</p>
                     <button className="text-white font-bold hover:text-amber-500 transition-colors mt-2">Apply for Partnership</button>
+                    <div className="mt-4 text-xs text-neutral-500">
+                        Customer?{' '}
+                        <Link href="/customer/register" className="text-amber-500 font-bold hover:underline">
+                            Daftar akun di sini
+                        </Link>
+                    </div>
                 </div>
             </div>
         </div>

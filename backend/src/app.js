@@ -44,9 +44,9 @@ app.use('/api/v1/auth', require('./modules/auth/auth.routes'));
 app.use('/api/v1/users', require('./modules/users/user.routes'));
 app.use('/api/v1/barbers', require('./modules/barbers/barber.routes'));
 app.use('/api/v1/queues', require('./modules/queues/queue.routes'));
-app.use('/api/v1/services', require('./modules/services/service.routes'));
-app.use('/api/v1', require('./modules/barbers/barber.routes')); // To support /barbershops/:id/barbers
-app.use('/api/v1', require('./modules/services/service.routes')); // To support /barbershops/:id/services
+app.use('/api/v1', require('./modules/services/service.routes'));
+app.use('/api/v1', require('./modules/barbershops/barbershop.routes'));
+app.use('/api/v1', require('./modules/superadmin/superadmin.routes'));
 
 // 404 Error Handler
 app.use((req, res, next) => {

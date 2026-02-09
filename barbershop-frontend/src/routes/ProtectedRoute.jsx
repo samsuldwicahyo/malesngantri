@@ -24,6 +24,11 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
             ADMIN: '/admin',
             SUPER_ADMIN: '/super-admin'
         };
+        if (user.role === 'CUSTOMER') {
+            const publicUrl = import.meta.env.VITE_PUBLIC_URL || 'http://localhost:3001';
+            window.location.href = publicUrl;
+            return null;
+        }
         return <Navigate to={redirectMap[user.role] || '/'} replace />;
     }
 
