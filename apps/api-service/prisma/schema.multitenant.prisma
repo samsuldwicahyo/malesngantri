@@ -14,17 +14,17 @@ enum GlobalRole {
 
 enum TenantRole {
   ADMIN_BARBER
-  BARBER
+  WORKER
   CUSTOMER
 }
 
 enum QueueStatus {
-  WAITING
-  CALLED
-  SERVING
+  BOOKED
+  CHECKED_IN
+  IN_SERVICE
   DONE
-  NO_SHOW
   CANCELED
+  NO_SHOW
 }
 
 enum SubscriptionStatus {
@@ -34,162 +34,164 @@ enum SubscriptionStatus {
 }
 
 model Tenant {
-  id                String              @id @default(uuid())
-  slug              String              @unique
-  name              String
-  city              String?
-  address           String?
-  whatsapp          String?
-  operationalHours  String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  deletedAt         DateTime?
+  id               String               @id @default(uuid())
+  slug             String               @unique
+  name             String
+  city             String?
+  address          String?
+  whatsapp         String?
+  operationalHours String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  deletedAt        DateTime?
 
-  memberships       TenantMembership[]
-  barberProfiles    BarberProfile[]
-  services          Service[]
-  queues            Queue[]
-  subscriptions     TenantSubscription[]
+  memberships      TenantMembership[]
+  barberProfiles   BarberProfile[]
+  services         Service[]
+  queues           Queue[]
+  subscriptions    TenantSubscription[]
 
   @@index([slug])
 }
 
 model User {
-  id                String              @id @default(uuid())
-  fullName          String
-  email             String              @unique
-  phoneNumber       String              @unique
-  passwordHash      String
-  globalRole        GlobalRole          @default(USER)
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  deletedAt         DateTime?
+  id           String               @id @default(uuid())
+  fullName     String
+  email        String               @unique
+  phoneNumber  String               @unique
+  passwordHash String
+  globalRole   GlobalRole           @default(USER)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  deletedAt    DateTime?
 
-  memberships       TenantMembership[]
-  barberProfiles    BarberProfile[]
-  queues            Queue[]             @relation("QueueCustomer")
-  queueUpdates      QueueStatusHistory[] @relation("QueueUpdatedBy")
+  memberships  TenantMembership[]
+  barberProfiles BarberProfile[]
+  queues       Queue[]              @relation("QueueCustomer")
+  queueUpdates QueueStatusHistory[] @relation("QueueUpdatedBy")
 }
 
 model TenantMembership {
-  id                String      @id @default(uuid())
-  tenantId          String
-  userId            String
-  role              TenantRole
-  createdAt         DateTime    @default(now())
+  id        String     @id @default(uuid())
+  tenantId  String
+  userId    String
+  role      TenantRole
+  createdAt DateTime   @default(now())
 
-  tenant            Tenant      @relation(fields: [tenantId], references: [id])
-  user              User        @relation(fields: [userId], references: [id])
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
 
   @@unique([tenantId, userId, role])
   @@index([tenantId, role])
 }
 
 model BarberProfile {
-  id                String      @id @default(uuid())
-  tenantId          String
-  userId            String
-  displayName       String
-  photoUrl          String?
-  socialMedia       String?
-  isActive          Boolean     @default(true)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id          String   @id @default(uuid())
+  tenantId    String
+  userId      String
+  displayName String
+  photoUrl    String?
+  socialMedia String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  tenant            Tenant      @relation(fields: [tenantId], references: [id])
-  user              User        @relation(fields: [userId], references: [id])
-  queues            Queue[]
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+  queues      Queue[]
 
   @@unique([tenantId, userId])
   @@index([tenantId, isActive])
 }
 
 model Service {
-  id                String      @id @default(uuid())
-  tenantId          String
-  name              String
-  description       String?
-  durationMinutes   Int
-  price             Decimal     @db.Decimal(12, 2)
-  isActive          Boolean     @default(true)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String
+  description     String?
+  durationMinutes Int
+  price           Decimal  @db.Decimal(12, 2)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  tenant            Tenant      @relation(fields: [tenantId], references: [id])
-  queues            Queue[]
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  queues          Queue[]
 
   @@index([tenantId, isActive])
 }
 
 model Queue {
-  id                String              @id @default(uuid())
-  tenantId          String
-  queueCode         String
-  customerId        String?
-  customerName      String
-  customerWhatsapp  String
-  barberId          String
-  serviceId         String
-  source            String              @default("ONLINE")
-  status            QueueStatus         @default(WAITING)
-  estimatedAt       DateTime?
-  calledAt          DateTime?
-  servingAt         DateTime?
-  doneAt            DateTime?
-  canceledAt        DateTime?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id               String      @id @default(uuid())
+  tenantId         String
+  bookingCode      String
+  customerId       String?
+  customerName     String
+  customerWhatsapp String
+  barberId         String
+  serviceId        String
+  source           String      @default("ONLINE")
+  status           QueueStatus @default(BOOKED)
+  bookingDate      DateTime    @db.Date
+  slotTime         String
+  checkedInAt      DateTime?
+  serviceStartAt   DateTime?
+  serviceEndAt     DateTime?
+  canceledAt       DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
-  tenant            Tenant              @relation(fields: [tenantId], references: [id])
-  customer          User?               @relation("QueueCustomer", fields: [customerId], references: [id])
-  barber            BarberProfile       @relation(fields: [barberId], references: [id])
-  service           Service             @relation(fields: [serviceId], references: [id])
-  history           QueueStatusHistory[]
+  tenant           Tenant      @relation(fields: [tenantId], references: [id])
+  customer         User?       @relation("QueueCustomer", fields: [customerId], references: [id])
+  barber           BarberProfile @relation(fields: [barberId], references: [id])
+  service          Service     @relation(fields: [serviceId], references: [id])
+  history          QueueStatusHistory[]
 
-  @@unique([tenantId, queueCode])
-  @@index([tenantId, status, createdAt])
-  @@index([tenantId, barberId, status])
+  @@unique([tenantId, bookingCode])
+  @@index([tenantId, bookingDate, slotTime])
+  @@index([tenantId, barberId, bookingDate, slotTime])
+  @@index([tenantId, status])
 }
 
 model QueueStatusHistory {
-  id                String      @id @default(uuid())
-  queueId           String
-  previousStatus    QueueStatus?
-  nextStatus        QueueStatus
-  note              String?
-  updatedById       String?
-  createdAt         DateTime    @default(now())
+  id             String      @id @default(uuid())
+  queueId        String
+  previousStatus QueueStatus?
+  nextStatus     QueueStatus
+  note           String?
+  updatedById    String?
+  createdAt      DateTime    @default(now())
 
-  queue             Queue       @relation(fields: [queueId], references: [id])
-  updatedBy         User?       @relation("QueueUpdatedBy", fields: [updatedById], references: [id])
+  queue          Queue       @relation(fields: [queueId], references: [id])
+  updatedBy      User?       @relation("QueueUpdatedBy", fields: [updatedById], references: [id])
 
   @@index([queueId, createdAt])
 }
 
 model SubscriptionPlan {
-  id                String      @id @default(uuid())
-  name              String
-  priceMonthly      Decimal     @db.Decimal(12, 2)
-  maxBarbers        Int
-  features          Json        @default("{}")
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id            String   @id @default(uuid())
+  name          String
+  priceMonthly  Decimal  @db.Decimal(12, 2)
+  maxBarbers    Int
+  features      Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  subscriptions     TenantSubscription[]
+  subscriptions TenantSubscription[]
 }
 
 model TenantSubscription {
-  id                String              @id @default(uuid())
-  tenantId          String
-  planId            String
-  status            SubscriptionStatus  @default(ACTIVE)
-  startDate         DateTime            @default(now())
-  endDate           DateTime
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id        String             @id @default(uuid())
+  tenantId  String
+  planId    String
+  status    SubscriptionStatus @default(ACTIVE)
+  startDate DateTime           @default(now())
+  endDate   DateTime
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
 
-  tenant            Tenant              @relation(fields: [tenantId], references: [id])
-  plan              SubscriptionPlan    @relation(fields: [planId], references: [id])
+  tenant    Tenant             @relation(fields: [tenantId], references: [id])
+  plan      SubscriptionPlan   @relation(fields: [planId], references: [id])
 
   @@index([tenantId, status, endDate])
 }

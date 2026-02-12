@@ -1,9 +1,15 @@
 import { getTenantSeed } from './demo-data';
 import type { QueueStatus, QueueTicket, TenantState } from './types';
 
-const STORAGE_PREFIX = 'malas-ngantri:v1';
+const STORAGE_PREFIX = 'malas-ngantri:v2';
 
-const ACTIVE_QUEUE_STATUSES: QueueStatus[] = ['WAITING', 'CALLED', 'SERVING'];
+const ACTIVE_QUEUE_STATUSES: QueueStatus[] = ['BOOKED', 'CHECKED_IN', 'IN_SERVICE'];
+
+const toMinutes = (slotTime: string): number => {
+  const [hours, minutes] = slotTime.split(':').map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return 0;
+  return hours * 60 + minutes;
+};
 
 export const isActiveQueueStatus = (status: QueueStatus): boolean => {
   return ACTIVE_QUEUE_STATUSES.includes(status);
@@ -42,39 +48,49 @@ export const persistTenantState = (slug: string, state: TenantState): void => {
   window.localStorage.setItem(getStorageKey(slug), JSON.stringify(state));
 };
 
-export const getQueueNumber = (state: TenantState): string => {
+export const getBookingCode = (state: TenantState): string => {
   const latest = state.queues
-    .map((item) => Number(item.queueCode.replace(/^A-/, '')))
+    .map((item) => Number(item.bookingCode.replace(/^BK-/, '')))
     .filter((value) => Number.isFinite(value))
     .sort((a, b) => b - a)[0];
 
   const next = (latest || 0) + 1;
-  return `A-${next.toString().padStart(3, '0')}`;
+  return `BK-${next.toString().padStart(4, '0')}`;
 };
 
-export const countQueueAhead = (
-  queues: QueueTicket[],
-  currentQueueId: string,
-): number => {
-  const activeQueues = queues
+const sortBooking = (a: QueueTicket, b: QueueTicket): number => {
+  const dateCompare = a.bookingDate.localeCompare(b.bookingDate);
+  if (dateCompare !== 0) return dateCompare;
+
+  const slotCompare = toMinutes(a.slotTime) - toMinutes(b.slotTime);
+  if (slotCompare !== 0) return slotCompare;
+
+  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+};
+
+export const countQueueAhead = (queues: QueueTicket[], currentQueueId: string): number => {
+  const current = queues.find((item) => item.id === currentQueueId);
+  if (!current) return 0;
+
+  return queues
+    .filter((item) => item.id !== current.id)
     .filter((item) => isActiveQueueStatus(item.status))
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-  const currentIndex = activeQueues.findIndex((item) => item.id === currentQueueId);
-  if (currentIndex <= 0) {
-    return 0;
-  }
-
-  return currentIndex;
+    .filter((item) => item.barberId === current.barberId)
+    .filter((item) => item.bookingDate === current.bookingDate)
+    .filter(
+      (item) =>
+        toMinutes(item.slotTime) < toMinutes(current.slotTime) ||
+        (item.slotTime === current.slotTime && new Date(item.createdAt).getTime() < new Date(current.createdAt).getTime()),
+    ).length;
 };
 
 const ALLOWED_TRANSITIONS: Record<QueueStatus, QueueStatus[]> = {
-  WAITING: ['CALLED', 'CANCELED'],
-  CALLED: ['SERVING', 'NO_SHOW', 'CANCELED'],
-  SERVING: ['DONE'],
+  BOOKED: ['CHECKED_IN', 'CANCELED'],
+  CHECKED_IN: ['IN_SERVICE', 'NO_SHOW', 'CANCELED'],
+  IN_SERVICE: ['DONE'],
   DONE: [],
-  NO_SHOW: [],
   CANCELED: [],
+  NO_SHOW: [],
 };
 
 export const getAllowedTransitions = (status: QueueStatus): QueueStatus[] => {
@@ -114,24 +130,28 @@ export const addQueueTicket = (
     customerWhatsapp: string;
     barberId: string;
     serviceId: string;
+    bookingDate: string;
+    slotTime: string;
     source: 'ONLINE' | 'OFFLINE';
   },
 ): TenantState => {
   const queue: QueueTicket = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    queueCode: getQueueNumber(state),
+    bookingCode: getBookingCode(state),
     customerName: payload.customerName,
     customerWhatsapp: payload.customerWhatsapp,
     barberId: payload.barberId,
     serviceId: payload.serviceId,
+    bookingDate: payload.bookingDate,
+    slotTime: payload.slotTime,
     source: payload.source,
-    status: 'WAITING',
+    status: 'BOOKED',
     createdAt: new Date().toISOString(),
   };
 
   return {
     ...state,
     updatedAt: new Date().toISOString(),
-    queues: [...state.queues, queue],
+    queues: [...state.queues, queue].sort(sortBooking),
   };
 };

@@ -11,38 +11,38 @@
 - Platform utama: `malesngantri.com`
 - Landing + register tenant: `/`
 - Super Admin: `/super-admin`
-- Halaman customer tenant: `/:tenantSlug`
-- Panel tenant (Admin Barber + Barber): `/:tenantSlug/admin`
+- Landing customer tenant: `/t/:tenantSlug`
+- Panel tenant (Admin Barber + Worker): `/t/:tenantSlug/admin`
 
 Catatan implementasi sekarang:
-- Contoh halaman tenant ada di `apps/web/src/app/[slug]/page.tsx`
-- Contoh panel admin tenant ada di `apps/web/src/app/[slug]/admin/page.tsx`
+- Contoh halaman tenant ada di `apps/web/src/app/t/[slug]/page.tsx`
+- Contoh panel admin tenant ada di `apps/web/src/app/t/[slug]/admin/page.tsx`
 
 ## 3. Isolasi Tenant
 - Semua tabel operasional menyimpan `tenantId` (atau `barbershopId`) wajib.
 - Setiap query API dibatasi oleh `tenantId` dari context route + user session.
 - Role `SUPER_ADMIN` boleh lintas tenant.
-- Role tenant (`ADMIN_BARBER`, `BARBER`, `CUSTOMER`) hanya tenant miliknya.
+- Role tenant (`ADMIN_BARBER`, `WORKER`, `CUSTOMER`) hanya tenant miliknya.
 
 ## 4. Role & Akses
 - `SUPER_ADMIN`: kelola tenant, paket, status langganan
-- `ADMIN_BARBER`: kelola profil tenant, barber, layanan, semua antrian tenant
-- `BARBER`: lihat/update antrian sesuai tenant
-- `CUSTOMER`: daftar/login, ambil antrian, lihat status, cancel
+- `ADMIN_BARBER`: kelola profil tenant, worker, layanan, semua booking tenant
+- `WORKER`: lihat/update status layanan sesuai booking tenant
+- `CUSTOMER`: daftar/login, booking slot, lihat status, cancel
 
-## 5. Status Antrean
+## 5. Status Booking
 Gunakan enum final:
-- `WAITING`
-- `CALLED`
-- `SERVING`
+- `BOOKED`
+- `CHECKED_IN`
+- `IN_SERVICE`
 - `DONE`
-- `NO_SHOW`
 - `CANCELED`
+- `NO_SHOW`
 
 Transisi yang direkomendasikan:
-- `WAITING -> CALLED | CANCELED`
-- `CALLED -> SERVING | NO_SHOW | CANCELED`
-- `SERVING -> DONE`
+- `BOOKED -> CHECKED_IN | CANCELED`
+- `CHECKED_IN -> IN_SERVICE | NO_SHOW | CANCELED`
+- `IN_SERVICE -> DONE`
 
 ## 6. Desain Database (Prisma)
 Blueprint schema disimpan di:
@@ -52,9 +52,9 @@ Entity inti:
 - `Tenant`
 - `User`
 - `Membership` (mapping user ke tenant + role)
-- `BarberProfile`
+- `BarberProfile` (profil worker/pemangkas)
 - `Service`
-- `Queue`
+- `Queue` (booking slot)
 - `QueueStatusHistory`
 - `SubscriptionPlan`
 - `TenantSubscription`
@@ -67,8 +67,8 @@ apps/
       app/
         page.tsx                     # landing + register tenant
         super-admin/page.tsx         # super admin panel
-        [slug]/page.tsx              # customer tenant page
-        [slug]/admin/page.tsx        # admin/barber queue dashboard
+        t/[slug]/page.tsx            # customer tenant landing + booking
+        t/[slug]/admin/page.tsx      # admin/worker dashboard booking
       features/
         tenant/
           types.ts
@@ -91,16 +91,16 @@ docs/
 ```
 
 ## 8. Realtime yang Direkomendasikan
-- Event channel per tenant: `tenant-{slug}-queue`
+- Event channel per tenant: `tenant-{slug}-booking`
 - Event minimal:
-  - `queue.created`
-  - `queue.status.updated`
-  - `queue.canceled`
+  - `booking.created`
+  - `booking.status.updated`
+  - `booking.canceled`
 - Frontend customer/admin subscribe channel tenant yang sama.
 - Di contoh saat ini dipakai `BroadcastChannel` antartab browser untuk demo lokal.
 
 ## 9. WhatsApp & Privasi
-- Nomor WA customer hanya ditampilkan di panel `/:tenantSlug/admin`.
+- Nomor WA customer hanya ditampilkan di panel `/t/:tenantSlug/admin`.
 - Tombol WA membuka `wa.me` dengan template pesan (manual send).
 - Sistem tidak auto-send agar sesuai requirement privasi + kontrol operator.
 
@@ -108,4 +108,4 @@ docs/
 - Tenant hanya aktif jika status subscription `ACTIVE`.
 - Jika tidak aktif:
   - halaman admin tenant dikunci,
-  - pembuatan antrean baru diblok.
+  - pembuatan booking baru diblok.

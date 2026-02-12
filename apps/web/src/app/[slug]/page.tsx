@@ -13,6 +13,7 @@ import {
 } from '@/features/tenant/store';
 import {
   QUEUE_STATUS_BADGE,
+  QUEUE_STATUS_HELP,
   QUEUE_STATUS_LABEL,
   type QueueTicket,
   type TenantState,
@@ -22,6 +23,29 @@ type QueueMessage = {
   type: 'SYNC_STATE';
   payload: TenantState;
 };
+
+const SLOT_OPTIONS = [
+  '09:00',
+  '09:30',
+  '10:00',
+  '10:30',
+  '11:00',
+  '11:30',
+  '13:00',
+  '13:30',
+  '14:00',
+  '14:30',
+  '15:00',
+  '15:30',
+  '16:00',
+  '16:30',
+  '17:00',
+  '17:30',
+  '18:00',
+  '18:30',
+  '19:00',
+  '19:30',
+] as const;
 
 const channelName = (slug: string): string => `malas-ngantri-tenant-${slug}`;
 
@@ -39,6 +63,8 @@ export default function TenantCustomerPage() {
   const [customerWhatsapp, setCustomerWhatsapp] = useState('');
   const [barberId, setBarberId] = useState('');
   const [serviceId, setServiceId] = useState('');
+  const [bookingDate, setBookingDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [slotTime, setSlotTime] = useState<(typeof SLOT_OPTIONS)[number]>('10:00');
   const [error, setError] = useState('');
   const channelRef = useRef<BroadcastChannel | null>(null);
 
@@ -78,53 +104,59 @@ export default function TenantCustomerPage() {
     return;
   }, [slug]);
 
-  const queues = useMemo(() => tenantState?.queues ?? [], [tenantState]);
+  const bookings = useMemo(() => tenantState?.queues ?? [], [tenantState]);
 
-  const activeQueues = useMemo(() => {
-    return queues
+  const activeBookings = useMemo(() => {
+    return bookings
       .filter((item) => isActiveQueueStatus(item.status))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  }, [queues]);
+      .sort((a, b) => `${a.bookingDate} ${a.slotTime}`.localeCompare(`${b.bookingDate} ${b.slotTime}`));
+  }, [bookings]);
 
-  const monitoredQueue = useMemo<QueueTicket | null>(() => {
+  const monitoredBooking = useMemo<QueueTicket | null>(() => {
     const sanitized = customerWhatsapp.replace(/\D/g, '');
     if (!sanitized) {
       return null;
     }
 
-    const matches = queues
+    const matches = bookings
       .filter((item) => item.customerWhatsapp.replace(/\D/g, '') === sanitized)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return matches[0] ?? null;
-  }, [customerWhatsapp, queues]);
+  }, [customerWhatsapp, bookings]);
 
-  const estimatedWaitMinutes = useMemo(() => {
-    if (!tenantState || !monitoredQueue) {
+  const bookingAhead = useMemo(() => {
+    if (!monitoredBooking) {
       return null;
     }
 
-    if (!isActiveQueueStatus(monitoredQueue.status)) {
+    return countQueueAhead(activeBookings, monitoredBooking.id);
+  }, [activeBookings, monitoredBooking]);
+
+  const estimatedDurationAhead = useMemo(() => {
+    if (!tenantState || !monitoredBooking) {
+      return null;
+    }
+
+    if (!isActiveQueueStatus(monitoredBooking.status)) {
       return 0;
     }
 
-    return activeQueues
-      .slice(0, countQueueAhead(activeQueues, monitoredQueue.id))
-      .reduce((total, item) => {
-        const service = tenantState.services.find((svc) => svc.id === item.serviceId);
-        return total + (service?.durationMinutes ?? 0);
-      }, 0);
-  }, [activeQueues, monitoredQueue, tenantState]);
+    const filtered = activeBookings.filter(
+      (item) =>
+        item.id !== monitoredBooking.id &&
+        item.barberId === monitoredBooking.barberId &&
+        item.bookingDate === monitoredBooking.bookingDate &&
+        item.slotTime <= monitoredBooking.slotTime,
+    );
 
-  const queueAhead = useMemo(() => {
-    if (!monitoredQueue) {
-      return null;
-    }
+    return filtered.reduce((total, item) => {
+      const service = tenantState.services.find((svc) => svc.id === item.serviceId);
+      return total + (service?.durationMinutes ?? 0);
+    }, 0);
+  }, [activeBookings, monitoredBooking, tenantState]);
 
-    return countQueueAhead(activeQueues, monitoredQueue.id);
-  }, [activeQueues, monitoredQueue]);
-
-  const joinQueue = (event: FormEvent<HTMLFormElement>) => {
+  const joinBooking = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!tenantState || !slug) {
       return;
@@ -140,7 +172,7 @@ export default function TenantCustomerPage() {
       return;
     }
     if (!barberId || !serviceId) {
-      setError('Pilih pemangkas rambut dan layanan.');
+      setError('Pilih worker/pemangkas rambut dan layanan.');
       return;
     }
 
@@ -149,6 +181,8 @@ export default function TenantCustomerPage() {
       customerWhatsapp: cleanWhatsapp,
       barberId,
       serviceId,
+      bookingDate,
+      slotTime,
       source: 'ONLINE',
     });
 
@@ -158,16 +192,16 @@ export default function TenantCustomerPage() {
     broadcast(next);
   };
 
-  const cancelQueue = () => {
-    if (!tenantState || !monitoredQueue || !slug) {
+  const cancelBooking = () => {
+    if (!tenantState || !monitoredBooking || !slug) {
       return;
     }
 
-    if (!['WAITING', 'CALLED'].includes(monitoredQueue.status)) {
+    if (!['BOOKED', 'CHECKED_IN'].includes(monitoredBooking.status)) {
       return;
     }
 
-    const next = updateQueueStatus(tenantState, monitoredQueue.id, 'CANCELED');
+    const next = updateQueueStatus(tenantState, monitoredBooking.id, 'CANCELED');
     setTenantState(next);
     persistTenantState(slug, next);
     broadcast(next);
@@ -179,12 +213,11 @@ export default function TenantCustomerPage() {
 
   if (tenantState.tenant.subscriptionStatus !== 'ACTIVE') {
     return (
-      <main className="min-h-screen bg-neutral-950 text-neutral-100 px-6 py-20">
+      <main className="min-h-screen bg-neutral-950 px-6 py-20 text-neutral-100">
         <div className="mx-auto max-w-3xl rounded-3xl border border-red-500/30 bg-red-500/10 p-8">
           <h1 className="text-3xl font-black">Tenant Tidak Aktif</h1>
           <p className="mt-3 text-sm text-red-100/90">
-            Barbershop ini belum memiliki langganan aktif. Hubungi admin barbershop atau support
-            platform untuk aktivasi.
+            Langganan tenant tidak aktif, booking online sementara dinonaktifkan.
           </p>
           <Link href="/" className="mt-6 inline-flex rounded-xl bg-white px-4 py-2 text-sm font-bold text-neutral-900">
             Kembali ke Landing Page
@@ -195,23 +228,21 @@ export default function TenantCustomerPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_10%_20%,rgba(248,113,113,0.2),transparent_30%),radial-gradient(circle_at_90%_0%,rgba(59,130,246,0.2),transparent_35%),#05060a] px-6 py-10 text-neutral-100">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_10%_20%,rgba(248,113,113,0.2),transparent_30%),radial-gradient(circle_at_90%_0%,rgba(59,130,246,0.2),transparent_35%),#05060a] px-4 py-8 text-neutral-100 sm:px-6 sm:py-10">
       <div className="mx-auto max-w-6xl space-y-8">
-        <header className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur">
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200/90">
-            {tenantState.tenant.slug}
-          </p>
+        <header className="rounded-3xl border border-white/10 bg-black/40 p-4 backdrop-blur sm:p-6">
+          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200/90">/t/{tenantState.tenant.slug}</p>
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-4xl font-black leading-tight">{tenantState.tenant.name}</h1>
+              <h1 className="text-3xl font-black leading-tight sm:text-4xl">{tenantState.tenant.name}</h1>
               <p className="mt-2 text-sm text-neutral-300">
                 {tenantState.tenant.address} • {tenantState.tenant.operationalHours}
               </p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex w-full flex-wrap gap-3 sm:w-auto">
               <Link
-                href={`/${slug}/admin`}
-                className="rounded-2xl border border-white/20 px-4 py-2 text-xs font-bold uppercase tracking-widest hover:bg-white/10"
+                href={`/t/${slug}/admin`}
+                className="w-full rounded-2xl border border-white/20 px-4 py-2 text-center text-xs font-bold uppercase tracking-widest hover:bg-white/10 sm:w-auto"
               >
                 Masuk Admin
               </Link>
@@ -219,23 +250,19 @@ export default function TenantCustomerPage() {
                 href={`https://wa.me/${tenantState.tenant.whatsapp}`}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-black uppercase tracking-widest text-emerald-950"
+                className="w-full rounded-2xl bg-emerald-500 px-4 py-2 text-center text-xs font-black uppercase tracking-widest text-emerald-950 sm:w-auto"
               >
-                Hubungi WA Toko
+                Kontak WhatsApp
               </a>
             </div>
           </div>
         </header>
 
         <section className="grid gap-6 lg:grid-cols-2">
-          <form
-            onSubmit={joinQueue}
-            className="rounded-3xl border border-white/10 bg-black/45 p-6 backdrop-blur"
-          >
-            <h2 className="text-xl font-black">Ambil Nomor Antrian</h2>
+          <form onSubmit={joinBooking} className="rounded-3xl border border-white/10 bg-black/45 p-4 backdrop-blur sm:p-6">
+            <h2 className="text-xl font-black">Booking Online (Pilih Jam)</h2>
             <p className="mt-2 text-sm text-neutral-400">
-              Alur: daftar/login customer → pilih barber → pilih layanan → sistem kirim nomor dan
-              estimasi.
+              Isi data singkat, lalu pilih pemangkas, layanan, tanggal, dan jam kedatangan.
             </p>
 
             <div className="mt-6 grid gap-4">
@@ -250,9 +277,7 @@ export default function TenantCustomerPage() {
               </label>
 
               <label className="grid gap-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">
-                  WhatsApp
-                </span>
+                <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">WhatsApp</span>
                 <input
                   value={customerWhatsapp}
                   onChange={(event) => setCustomerWhatsapp(event.target.value)}
@@ -261,16 +286,41 @@ export default function TenantCustomerPage() {
                 />
               </label>
 
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Tanggal</span>
+                  <input
+                    type="date"
+                    value={bookingDate}
+                    onChange={(event) => setBookingDate(event.target.value)}
+                    className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
+                  />
+                </label>
+
+                <label className="grid gap-2">
+                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Slot Waktu</span>
+                  <select
+                    value={slotTime}
+                    onChange={(event) => setSlotTime(event.target.value as (typeof SLOT_OPTIONS)[number])}
+                    className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
+                  >
+                    {SLOT_OPTIONS.map((slot) => (
+                      <option key={slot} value={slot}>
+                        {slot}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
               <label className="grid gap-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">
-                  Pilih Pemangkas
-                </span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Pilih Pemangkas</span>
                 <select
                   value={barberId}
                   onChange={(event) => setBarberId(event.target.value)}
                   className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
                 >
-                  <option value="">Pilih barber...</option>
+                  <option value="">Pilih pemangkas...</option>
                   {tenantState.barbers.map((barber) => (
                     <option key={barber.id} value={barber.id}>
                       {barber.name}
@@ -280,9 +330,7 @@ export default function TenantCustomerPage() {
               </label>
 
               <label className="grid gap-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">
-                  Pilih Styling / Layanan
-                </span>
+                <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Pilih Layanan</span>
                 <select
                   value={serviceId}
                   onChange={(event) => setServiceId(event.target.value)}
@@ -304,88 +352,135 @@ export default function TenantCustomerPage() {
               type="submit"
               className="mt-6 w-full rounded-xl bg-rose-400 px-4 py-3 text-sm font-black uppercase tracking-widest text-rose-950 hover:bg-rose-300"
             >
-              Ambil Antrian Sekarang
+              Booking Sekarang
             </button>
-            <p className="mt-2 text-xs text-neutral-500">
-              Privasi: nomor WhatsApp hanya terlihat di panel admin tenant.
-            </p>
+            <p className="mt-2 text-xs text-neutral-500">Nomor WhatsApp hanya terlihat di panel admin tenant.</p>
           </form>
 
-          <div className="rounded-3xl border border-white/10 bg-black/45 p-6 backdrop-blur">
-            <h2 className="text-xl font-black">Status Antrian Customer</h2>
-            {monitoredQueue ? (
+          <div className="rounded-3xl border border-white/10 bg-black/45 p-4 backdrop-blur sm:p-6">
+            <h2 className="text-xl font-black">Pantau Status Booking</h2>
+            {monitoredBooking ? (
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-white/10 bg-neutral-900 p-4">
-                  <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Nomor Antrian</p>
-                  <p className="mt-1 text-4xl font-black text-rose-300">{monitoredQueue.queueCode}</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Kode Booking</p>
+                  <p className="mt-1 text-4xl font-black text-rose-300">{monitoredBooking.bookingCode}</p>
+                  <p className="mt-1 text-sm text-neutral-300">
+                    Slot: {monitoredBooking.bookingDate} • {monitoredBooking.slotTime}
+                  </p>
                   <p className="mt-1 text-sm text-neutral-300">
                     Status:{' '}
                     <span
-                      className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${QUEUE_STATUS_BADGE[monitoredQueue.status]}`}
+                      className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${QUEUE_STATUS_BADGE[monitoredBooking.status]}`}
                     >
-                      {QUEUE_STATUS_LABEL[monitoredQueue.status]}
+                      {QUEUE_STATUS_LABEL[monitoredBooking.status]}
                     </span>
                   </p>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border border-white/10 bg-neutral-900 p-4">
-                    <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Antrian di Depan</p>
-                    <p className="mt-1 text-2xl font-black">{queueAhead ?? 0}</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Booking di Depan</p>
+                    <p className="mt-1 text-2xl font-black">{bookingAhead ?? 0}</p>
                   </div>
                   <div className="rounded-2xl border border-white/10 bg-neutral-900 p-4">
-                    <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Estimasi Tunggu</p>
-                    <p className="mt-1 text-2xl font-black">{estimatedWaitMinutes ?? 0} menit</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Estimasi Durasi Tunggu</p>
+                    <p className="mt-1 text-2xl font-black">{estimatedDurationAhead ?? 0} menit</p>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={cancelQueue}
-                  disabled={!['WAITING', 'CALLED'].includes(monitoredQueue.status)}
+                  onClick={cancelBooking}
+                  disabled={!['BOOKED', 'CHECKED_IN'].includes(monitoredBooking.status)}
                   className="w-full rounded-xl border border-rose-400/50 bg-rose-500/10 px-4 py-3 text-sm font-bold uppercase tracking-widest text-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  Cancel Antrian
+                  Batalkan Booking
                 </button>
               </div>
             ) : (
-              <div className="mt-5 rounded-2xl border border-dashed border-white/20 bg-neutral-950/60 p-6 text-sm text-neutral-400">
-                Isi nomor WhatsApp yang dipakai untuk antri agar status muncul real-time tanpa refresh.
+              <div className="mt-5 rounded-2xl border border-dashed border-white/20 bg-neutral-950/60 p-4 text-sm text-neutral-400 sm:p-6">
+                Isi nomor WhatsApp yang dipakai saat booking untuk melihat status terbaru.
               </div>
             )}
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-neutral-950/70 p-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Arti Status</p>
+              <div className="mt-2 space-y-1 text-xs text-neutral-300">
+                {Object.entries(QUEUE_STATUS_HELP).map(([key, value]) => (
+                  <p key={key}>
+                    <span className="font-bold text-neutral-100">{QUEUE_STATUS_LABEL[key as keyof typeof QUEUE_STATUS_HELP]}:</span>{' '}
+                    {value}
+                  </p>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
-        <section className="rounded-3xl border border-white/10 bg-black/40 p-6 backdrop-blur">
+        <section className="rounded-3xl border border-white/10 bg-black/40 p-4 backdrop-blur sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-black">Snapshot Antrian Saat Ini</h2>
-            <p className="text-xs text-neutral-500">Realtime demo via BroadcastChannel antar tab browser</p>
+            <h2 className="text-xl font-black">Daftar Booking Hari Ini</h2>
+            <p className="text-xs text-neutral-500">Data akan ikut berubah saat admin update status</p>
           </div>
 
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[740px] text-left text-sm">
+          <div className="mt-4 space-y-3 md:hidden">
+            {activeBookings.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-white/20 bg-neutral-950/60 p-4 text-sm text-neutral-400">
+                Belum ada booking aktif hari ini.
+              </div>
+            ) : (
+              activeBookings.map((item) => {
+                const service = tenantState.services.find((svc) => svc.id === item.serviceId);
+                const barber = tenantState.barbers.find((row) => row.id === item.barberId);
+
+                return (
+                  <article key={item.id} className="rounded-2xl border border-white/10 bg-neutral-900/60 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-black text-rose-300">{item.bookingCode}</p>
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${QUEUE_STATUS_BADGE[item.status]}`}
+                      >
+                        {QUEUE_STATUS_LABEL[item.status]}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold">{item.customerName}</p>
+                    <p className="mt-1 text-xs text-neutral-400">
+                      {item.bookingDate} • {item.slotTime}
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-300">Layanan: {service?.name ?? '-'}</p>
+                    <p className="mt-1 text-xs text-neutral-300">Pemangkas: {barber?.name ?? '-'}</p>
+                  </article>
+                );
+              })
+            )}
+          </div>
+
+          <div className="mt-4 hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[840px] text-left text-sm">
               <thead className="text-xs uppercase tracking-widest text-neutral-400">
                 <tr>
-                  <th className="py-3">No</th>
+                  <th className="py-3">Kode</th>
                   <th className="py-3">Customer</th>
+                  <th className="py-3">Tanggal</th>
+                  <th className="py-3">Slot</th>
                   <th className="py-3">Layanan</th>
-                  <th className="py-3">Barber</th>
-                  <th className="py-3">Sumber</th>
+                  <th className="py-3">Worker</th>
                   <th className="py-3">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {activeQueues.map((item) => {
+                {activeBookings.map((item) => {
                   const service = tenantState.services.find((svc) => svc.id === item.serviceId);
                   const barber = tenantState.barbers.find((row) => row.id === item.barberId);
 
                   return (
                     <tr key={item.id} className="border-t border-white/10">
-                      <td className="py-3 font-black text-rose-300">{item.queueCode}</td>
+                      <td className="py-3 font-black text-rose-300">{item.bookingCode}</td>
                       <td className="py-3">{item.customerName}</td>
+                      <td className="py-3">{item.bookingDate}</td>
+                      <td className="py-3">{item.slotTime}</td>
                       <td className="py-3">{service?.name ?? '-'}</td>
                       <td className="py-3">{barber?.name ?? '-'}</td>
-                      <td className="py-3">{item.source}</td>
                       <td className="py-3">
                         <span
                           className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${QUEUE_STATUS_BADGE[item.status]}`}

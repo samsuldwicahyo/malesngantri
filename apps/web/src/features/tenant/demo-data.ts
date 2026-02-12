@@ -1,6 +1,7 @@
 import type { TenantState } from './types';
 
 const now = new Date();
+const today = now.toISOString().slice(0, 10);
 
 const minutesAgo = (minutes: number): string => {
   return new Date(now.getTime() - minutes * 60_000).toISOString();
@@ -58,47 +59,55 @@ const TENANT_SEEDS: Record<string, TenantState> = {
     ],
     queues: [
       {
-        id: 'queue-001',
-        queueCode: 'A-021',
+        id: 'booking-001',
+        bookingCode: 'BK-0101',
         customerName: 'Budi',
         customerWhatsapp: '6281212121212',
         barberId: 'barber-andi',
         serviceId: 'svc-haircut',
+        bookingDate: today,
+        slotTime: '10:00',
         source: 'ONLINE',
-        status: 'SERVING',
+        status: 'IN_SERVICE',
         createdAt: minutesAgo(45),
       },
       {
-        id: 'queue-002',
-        queueCode: 'A-022',
+        id: 'booking-002',
+        bookingCode: 'BK-0102',
         customerName: 'Rizky',
         customerWhatsapp: '6289898989898',
         barberId: 'barber-raka',
         serviceId: 'svc-haircut-beard',
+        bookingDate: today,
+        slotTime: '10:30',
         source: 'OFFLINE',
-        status: 'CALLED',
+        status: 'CHECKED_IN',
         createdAt: minutesAgo(30),
       },
       {
-        id: 'queue-003',
-        queueCode: 'A-023',
+        id: 'booking-003',
+        bookingCode: 'BK-0103',
         customerName: 'Dimas',
         customerWhatsapp: '6287878787878',
         barberId: 'barber-andi',
         serviceId: 'svc-haircut',
+        bookingDate: today,
+        slotTime: '11:00',
         source: 'ONLINE',
-        status: 'WAITING',
+        status: 'BOOKED',
         createdAt: minutesAgo(20),
       },
       {
-        id: 'queue-004',
-        queueCode: 'A-024',
+        id: 'booking-004',
+        bookingCode: 'BK-0104',
         customerName: 'Rina',
         customerWhatsapp: '6281313131313',
         barberId: 'barber-raka',
         serviceId: 'svc-coloring',
+        bookingDate: today,
+        slotTime: '11:30',
         source: 'ONLINE',
-        status: 'WAITING',
+        status: 'BOOKED',
         createdAt: minutesAgo(12),
       },
     ],
@@ -123,9 +132,9 @@ const buildFallbackSeed = (slug: string): TenantState => ({
   barbers: [
     {
       id: `barber-${slug}-1`,
-      name: 'Barber Utama',
+      name: 'Worker Utama',
       phone: '6280000000001',
-      socialMedia: '@barber',
+      socialMedia: '@worker',
       photoUrl:
         'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&w=400&q=80',
     },

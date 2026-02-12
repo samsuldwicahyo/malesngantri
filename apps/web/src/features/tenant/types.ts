@@ -1,33 +1,42 @@
-export const QUEUE_STATUSES = [
-  'WAITING',
-  'CALLED',
-  'SERVING',
+export const BOOKING_STATUSES = [
+  'BOOKED',
+  'CHECKED_IN',
+  'IN_SERVICE',
   'DONE',
-  'NO_SHOW',
   'CANCELED',
+  'NO_SHOW',
 ] as const;
 
-export type QueueStatus = (typeof QUEUE_STATUSES)[number];
+export type QueueStatus = (typeof BOOKING_STATUSES)[number];
 
 export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
-  WAITING: 'Menunggu',
-  CALLED: 'Dipanggil',
-  SERVING: 'Dilayani',
+  BOOKED: 'Sudah Booking',
+  CHECKED_IN: 'Sudah Datang',
+  IN_SERVICE: 'Sedang Dilayani',
   DONE: 'Selesai',
-  NO_SHOW: 'Tidak Hadir',
   CANCELED: 'Dibatalkan',
+  NO_SHOW: 'Tidak Hadir',
+};
+
+export const QUEUE_STATUS_HELP: Record<QueueStatus, string> = {
+  BOOKED: 'Jadwal sudah dibuat, pelanggan belum datang.',
+  CHECKED_IN: 'Pelanggan sudah tiba di lokasi.',
+  IN_SERVICE: 'Pelanggan sedang dipotong rambut.',
+  DONE: 'Layanan sudah selesai.',
+  CANCELED: 'Booking dibatalkan oleh pelanggan/admin.',
+  NO_SHOW: 'Pelanggan tidak datang sesuai jadwal.',
 };
 
 export const QUEUE_STATUS_BADGE: Record<QueueStatus, string> = {
-  WAITING: 'bg-slate-500/15 text-slate-200 border-slate-500/40',
-  CALLED: 'bg-amber-500/15 text-amber-200 border-amber-500/40',
-  SERVING: 'bg-sky-500/15 text-sky-200 border-sky-500/40',
+  BOOKED: 'bg-violet-500/15 text-violet-200 border-violet-500/40',
+  CHECKED_IN: 'bg-amber-500/15 text-amber-200 border-amber-500/40',
+  IN_SERVICE: 'bg-sky-500/15 text-sky-200 border-sky-500/40',
   DONE: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40',
-  NO_SHOW: 'bg-orange-500/15 text-orange-200 border-orange-500/40',
   CANCELED: 'bg-rose-500/15 text-rose-200 border-rose-500/40',
+  NO_SHOW: 'bg-orange-500/15 text-orange-200 border-orange-500/40',
 };
 
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN_BARBER' | 'BARBER' | 'CUSTOMER';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN_BARBER' | 'WORKER' | 'CUSTOMER';
 
 export type BookingSource = 'ONLINE' | 'OFFLINE';
 
@@ -61,11 +70,13 @@ export type ServiceItem = {
 
 export type QueueTicket = {
   id: string;
-  queueCode: string;
+  bookingCode: string;
   customerName: string;
   customerWhatsapp: string;
   barberId: string;
   serviceId: string;
+  bookingDate: string;
+  slotTime: string;
   source: BookingSource;
   status: QueueStatus;
   createdAt: string;
