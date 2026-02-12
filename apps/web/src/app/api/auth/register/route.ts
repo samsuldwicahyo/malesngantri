@@ -31,6 +31,7 @@ const normalizeBaseUrls = (baseUrl: string, host?: string | null) => {
         if (!url) continue;
         if (seen.has(url)) continue;
         if (host && url.includes(host)) {
+            // Avoid proxying to the same Next host
             continue;
         }
         seen.add(url);
@@ -41,7 +42,7 @@ const normalizeBaseUrls = (baseUrl: string, host?: string | null) => {
 };
 
 const forward = async (baseUrl: string, body: unknown) => {
-    const response = await fetch(`${baseUrl}/auth/login`, {
+    const response = await fetch(`${baseUrl}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
             {
                 success: false,
-                error: { code: 'LOGIN_PROXY_FAILED', message: 'Login proxy error' }
+                error: { code: 'REGISTER_PROXY_FAILED', message: 'Register proxy error' }
             },
             { status: 500 }
         );

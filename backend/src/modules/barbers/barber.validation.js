@@ -7,11 +7,20 @@ const scheduleItemSchema = Joi.object({
     isWorkDay: Joi.boolean().default(true)
 });
 
+const socialLinksSchema = Joi.object({
+    instagram: Joi.string().trim().allow('', null),
+    tiktok: Joi.string().trim().allow('', null),
+    facebook: Joi.string().trim().allow('', null),
+    whatsapp: Joi.string().trim().allow('', null),
+    website: Joi.string().trim().allow('', null)
+}).optional();
+
 const createBarberSchema = Joi.object({
     name: Joi.string().trim().min(2).max(100).required(),
     nickname: Joi.string().trim().max(50),
     phone: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
     email: Joi.string().email(),
+    photoUrl: Joi.string().uri().allow('', null),
     bio: Joi.string().max(1000),
     specializations: Joi.array().items(Joi.string()),
     experienceYears: Joi.number().integer().min(0).default(0),
@@ -23,7 +32,8 @@ const createBarberSchema = Joi.object({
         otherwise: Joi.optional()
     }),
     services: Joi.array().items(Joi.string().uuid()),
-    schedule: Joi.array().items(scheduleItemSchema)
+    schedule: Joi.array().items(scheduleItemSchema),
+    socialLinks: socialLinksSchema
 });
 
 const updateBarberSchema = Joi.object({
@@ -34,6 +44,7 @@ const updateBarberSchema = Joi.object({
     photoUrl: Joi.string().uri(),
     bio: Joi.string().max(1000),
     specializations: Joi.array().items(Joi.string()),
+    socialLinks: socialLinksSchema,
     experienceYears: Joi.number().integer().min(0),
     commissionType: Joi.string().valid('PERCENTAGE', 'FIXED', 'COMBINED'),
     commissionValue: Joi.number().min(0),
@@ -47,9 +58,13 @@ const updateStatusSchema = Joi.object({
 });
 
 const updateMyProfileSchema = Joi.object({
+    name: Joi.string().trim().min(2).max(100),
     nickname: Joi.string().trim().max(50),
+    phone: Joi.string().pattern(/^[0-9+]{10,15}$/),
     bio: Joi.string().max(1000),
-    photoUrl: Joi.string().uri()
+    photoUrl: Joi.string().uri(),
+    specializations: Joi.array().items(Joi.string()),
+    socialLinks: socialLinksSchema
 });
 
 module.exports = {

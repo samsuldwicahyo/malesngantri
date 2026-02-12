@@ -155,11 +155,26 @@ const login = async (req, res, next) => {
         }
 
         const { email, password } = value;
+        const identifier = email.trim();
+        const normalizedPhone = identifier.replace(/[^\d+]/g, '');
 
-        const user = await prisma.user.findUnique({
-            where: { email },
+        let user = await prisma.user.findFirst({
+            where: {
+                OR: [
+                    { email: identifier },
+                    ...(normalizedPhone ? [{ phoneNumber: normalizedPhone }] : [])
+                ]
+            },
             include: { barbershop: true }
         });
+
+        if (!user && !identifier.includes('@')) {
+            const guessedEmail = `${identifier}@malasngantri.com`;
+            user = await prisma.user.findFirst({
+                where: { email: guessedEmail },
+                include: { barbershop: true }
+            });
+        }
 
         if (!user || !(await authService.comparePassword(password, user.passwordHash))) {
             return res.status(401).json({

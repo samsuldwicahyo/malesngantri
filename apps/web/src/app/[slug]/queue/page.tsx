@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { useParams } from 'next/navigation';
 import {
     Users,
@@ -58,8 +58,8 @@ type QueuePayload = {
     estimatedWaitMinutes: number | null;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api/v1';
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api/v1';
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
 
 export default function QueuePage() {
     const { slug } = useParams();
@@ -187,7 +187,7 @@ export default function QueuePage() {
         }
     };
 
-    const handleJoinQueue = async (e: React.FormEvent) => {
+    const handleJoinQueue = async (e: FormEvent) => {
         e.preventDefault();
         setError('');
 
@@ -223,13 +223,15 @@ export default function QueuePage() {
 
         setIsJoining(true);
         try {
-            const payloadBody = {
-                barbershopId: shop.id,
-                barberId: selectedBarberId,
-                serviceId: selectedServiceId,
-                customerName: name.trim(),
-                customerPhone: normalizedPhone
-            };
+        const scheduledDate = new Date().toISOString();
+        const payloadBody = {
+            barbershopId: shop.id,
+            barberId: selectedBarberId,
+            serviceId: selectedServiceId,
+            customerName: name.trim(),
+            customerPhone: normalizedPhone,
+            scheduledDate
+        };
 
             const response =
                 accessToken && role === 'CUSTOMER'

@@ -14,7 +14,7 @@ const generateUsername = (name) => {
  */
 const createBarber = async (barbershopId, data) => {
     const {
-        name, phone, email, nickname, bio, specializations,
+        name, phone, email, nickname, bio, specializations, photoUrl, socialLinks,
         experienceYears, commissionType, commissionValue, commissionBase,
         services, schedule
     } = data;
@@ -23,6 +23,7 @@ const createBarber = async (barbershopId, data) => {
     const username = generateUsername(name);
     const password = Math.random().toString(36).slice(-8); // 8 char random password
     const passwordHash = await authService.hashPassword(password);
+    const userEmail = email || `${username}@malasngantri.com`;
 
     // Execute in transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -30,7 +31,7 @@ const createBarber = async (barbershopId, data) => {
         const user = await tx.user.create({
             data: {
                 fullName: name,
-                email: email || `${username}@malasngantri.com`, // Fallback email
+                email: userEmail, // Fallback email
                 phoneNumber: phone,
                 passwordHash,
                 role: 'BARBER',
@@ -47,8 +48,10 @@ const createBarber = async (barbershopId, data) => {
                 nickname,
                 phone,
                 email,
+                photoUrl: photoUrl || null,
                 bio,
                 specializations,
+                socialLinks: socialLinks || undefined,
                 experienceYears,
                 commissionType,
                 commissionValue,
@@ -80,7 +83,7 @@ const createBarber = async (barbershopId, data) => {
             });
         }
 
-        return { barber, username, password };
+        return { barber, username, password, email: userEmail };
     });
 
     return result;

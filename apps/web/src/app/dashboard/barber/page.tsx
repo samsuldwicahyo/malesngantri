@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Users,
@@ -12,7 +12,8 @@ import {
     Power,
     ChevronRight,
     Scissors,
-    RefreshCw
+    RefreshCw,
+    User
 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 
@@ -29,6 +30,23 @@ type BarberProfile = {
     name: string;
     status: string;
     barbershopId: string;
+    phone?: string | null;
+    photoUrl?: string | null;
+    specializations?: string[] | null;
+    socialLinks?: {
+        instagram?: string;
+        tiktok?: string;
+        facebook?: string;
+        whatsapp?: string;
+        website?: string;
+    } | null;
+};
+
+type Service = {
+    id: string;
+    name: string;
+    duration: number;
+    price?: number;
 };
 
 type QueueItem = {
@@ -49,8 +67,8 @@ type BarberStats = {
     totalReviews: number;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api/v1';
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api/v1';
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
 
 export default function BarberDashboard() {
     const [status, setStatus] = useState('AVAILABLE');
@@ -61,6 +79,27 @@ export default function BarberDashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
+    const [isCreatingWalkIn, setIsCreatingWalkIn] = useState(false);
+    const [showProfileEditor, setShowProfileEditor] = useState(false);
+    const [showWalkInModal, setShowWalkInModal] = useState(false);
+    const [profileForm, setProfileForm] = useState({
+        name: '',
+        phone: '',
+        photoUrl: '',
+        specializations: '',
+        instagram: '',
+        tiktok: '',
+        facebook: '',
+        whatsapp: '',
+        website: ''
+    });
+    const [walkInForm, setWalkInForm] = useState({
+        customerName: '',
+        customerPhone: '',
+        serviceId: ''
+    });
+    const [barberServices, setBarberServices] = useState<Service[]>([]);
     const router = useRouter();
     const socketRef = useRef<Socket | null>(null);
 
@@ -143,6 +182,17 @@ export default function BarberDashboard() {
             const barber = barberJson.data?.barber as BarberProfile;
             setBarberProfile(barber);
             setStatus(barber.status);
+            setProfileForm({
+                name: barber.name || '',
+                phone: barber.phone || '',
+                photoUrl: barber.photoUrl || '',
+                specializations: barber.specializations?.join(', ') || '',
+                instagram: barber.socialLinks?.instagram || '',
+                tiktok: barber.socialLinks?.tiktok || '',
+                facebook: barber.socialLinks?.facebook || '',
+                whatsapp: barber.socialLinks?.whatsapp || '',
+                website: barber.socialLinks?.website || ''
+            });
 
             setStats({
                 totalQueues: statsJson.data?.totalQueues || 0,
@@ -160,6 +210,14 @@ export default function BarberDashboard() {
                 throw new Error(queuesJson?.error?.message || 'Gagal memuat antrian');
             }
             setQueues(queuesJson.data?.queues || []);
+
+            const servicesRes = await fetch(`${API_BASE_URL}/barbers/${barber.id}/services`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            const servicesJson = await servicesRes.json();
+            if (servicesRes.ok) {
+                setBarberServices(servicesJson.data || []);
+            }
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Gagal memuat data';
             setError(message);
@@ -231,6 +289,96 @@ export default function BarberDashboard() {
             setError(message);
         } finally {
             setIsUpdating(false);
+        }
+    };
+
+    const handleSaveProfile = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!accessToken) return;
+        setError('');
+        setIsSavingProfile(true);
+        try {
+            const payload = {
+                name: profileForm.name.trim(),
+                phone: profileForm.phone.replace(/[^\d+]/g, ''),
+                photoUrl: profileForm.photoUrl.trim() || null,
+                specializations: profileForm.specializations
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+                socialLinks: {
+                    instagram: profileForm.instagram.trim(),
+                    tiktok: profileForm.tiktok.trim(),
+                    facebook: profileForm.facebook.trim(),
+                    whatsapp: profileForm.whatsapp.trim(),
+                    website: profileForm.website.trim()
+                }
+            };
+
+            const response = await fetch(`${API_BASE_URL}/barbers/me`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`
+                },
+                body: JSON.stringify(payload)
+            });
+            const payloadJson = await response.json();
+            if (!response.ok) {
+                throw new Error(payloadJson?.error?.message || 'Gagal menyimpan profil');
+            }
+            setShowProfileEditor(false);
+            await loadData();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Gagal menyimpan profil';
+            setError(message);
+        } finally {
+            setIsSavingProfile(false);
+        }
+    };
+
+    const handleCreateWalkIn = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!accessToken || !barberProfile) return;
+        setError('');
+
+        if (!walkInForm.customerName.trim() || !walkInForm.serviceId) {
+            setError('Nama pelanggan dan layanan wajib diisi.');
+            return;
+        }
+
+        setIsCreatingWalkIn(true);
+        try {
+            const payload = {
+                barbershopId: barberProfile.barbershopId,
+                barberId: barberProfile.id,
+                serviceId: walkInForm.serviceId,
+                customerName: walkInForm.customerName.trim(),
+                customerPhone: walkInForm.customerPhone.replace(/[^\d+]/g, '') || undefined,
+                bookingType: 'WALK_IN',
+                scheduledDate: new Date().toISOString()
+            };
+
+            const response = await fetch(`${API_BASE_URL}/queues`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`
+                },
+                body: JSON.stringify(payload)
+            });
+            const json = await response.json();
+            if (!response.ok) {
+                throw new Error(json?.error?.message || 'Gagal menambahkan antrian offline');
+            }
+            setShowWalkInModal(false);
+            setWalkInForm({ customerName: '', customerPhone: '', serviceId: '' });
+            await loadData();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Gagal menambahkan antrian offline';
+            setError(message);
+        } finally {
+            setIsCreatingWalkIn(false);
         }
     };
 
@@ -469,6 +617,20 @@ export default function BarberDashboard() {
                         <h3 className="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">Quick Actions</h3>
                         <div className="grid grid-cols-2 gap-3">
                             <button
+                                onClick={() => setShowWalkInModal(true)}
+                                className="bg-neutral-900 border border-white/5 p-4 rounded-2xl flex flex-col items-center gap-2 hover:bg-neutral-800 transition-colors"
+                            >
+                                <Scissors size={18} className="text-amber-500" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Walk-in</span>
+                            </button>
+                            <button
+                                onClick={() => setShowProfileEditor(true)}
+                                className="bg-neutral-900 border border-white/5 p-4 rounded-2xl flex flex-col items-center gap-2 hover:bg-neutral-800 transition-colors"
+                            >
+                                <User size={18} className="text-blue-400" />
+                                <span className="text-[10px] font-black uppercase tracking-widest">Profil</span>
+                            </button>
+                            <button
                                 onClick={() => updateStatus('OFFLINE')}
                                 disabled={isUpdating}
                                 className="bg-neutral-900 border border-white/5 p-4 rounded-2xl flex flex-col items-center gap-2 hover:bg-neutral-800 transition-colors"
@@ -493,6 +655,153 @@ export default function BarberDashboard() {
                     </button>
                 </div>
             </main>
+            {showProfileEditor && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-6">
+                    <div className="w-full max-w-2xl rounded-[2.5rem] border border-white/10 bg-neutral-900/90 p-8 space-y-6">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <p className="text-xs uppercase tracking-widest text-neutral-500 font-bold">Profil Barber</p>
+                                <h3 className="text-2xl font-black">Update Data Diri</h3>
+                            </div>
+                            <button
+                                onClick={() => setShowProfileEditor(false)}
+                                className="text-neutral-500 text-xs font-bold uppercase tracking-widest hover:text-white"
+                            >
+                                Tutup
+                            </button>
+                        </div>
+                        <form className="space-y-4" onSubmit={handleSaveProfile}>
+                            <div className="grid md:grid-cols-2 gap-4">
+                                <input
+                                    type="text"
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                    placeholder="Nama"
+                                    value={profileForm.name}
+                                    onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                                />
+                                <input
+                                    type="tel"
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                    placeholder="No. HP"
+                                    value={profileForm.phone}
+                                    onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                                />
+                                <input
+                                    type="url"
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium md:col-span-2"
+                                    placeholder="Photo URL"
+                                    value={profileForm.photoUrl}
+                                    onChange={(e) => setProfileForm({ ...profileForm, photoUrl: e.target.value })}
+                                />
+                            </div>
+                            <input
+                                type="text"
+                                className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                placeholder="Spesialisasi (pisahkan dengan koma)"
+                                value={profileForm.specializations}
+                                onChange={(e) => setProfileForm({ ...profileForm, specializations: e.target.value })}
+                            />
+                            <div className="grid md:grid-cols-2 gap-4">
+                                <input
+                                    type="text"
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                    placeholder="Instagram"
+                                    value={profileForm.instagram}
+                                    onChange={(e) => setProfileForm({ ...profileForm, instagram: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                    placeholder="TikTok"
+                                    value={profileForm.tiktok}
+                                    onChange={(e) => setProfileForm({ ...profileForm, tiktok: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                    placeholder="Facebook"
+                                    value={profileForm.facebook}
+                                    onChange={(e) => setProfileForm({ ...profileForm, facebook: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                    placeholder="WhatsApp"
+                                    value={profileForm.whatsapp}
+                                    onChange={(e) => setProfileForm({ ...profileForm, whatsapp: e.target.value })}
+                                />
+                                <input
+                                    type="text"
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium md:col-span-2"
+                                    placeholder="Website"
+                                    value={profileForm.website}
+                                    onChange={(e) => setProfileForm({ ...profileForm, website: e.target.value })}
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={isSavingProfile}
+                                className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-70 text-black font-black py-4 rounded-2xl transition-all"
+                            >
+                                {isSavingProfile ? 'Menyimpan...' : 'Simpan Profil'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+            {showWalkInModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-6">
+                    <div className="w-full max-w-md rounded-[2.5rem] border border-white/10 bg-neutral-900/90 p-8 space-y-6">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <p className="text-xs uppercase tracking-widest text-neutral-500 font-bold">Walk-in</p>
+                                <h3 className="text-2xl font-black">Input Pelanggan Offline</h3>
+                            </div>
+                            <button
+                                onClick={() => setShowWalkInModal(false)}
+                                className="text-neutral-500 text-xs font-bold uppercase tracking-widest hover:text-white"
+                            >
+                                Tutup
+                            </button>
+                        </div>
+                        <form className="space-y-4" onSubmit={handleCreateWalkIn}>
+                            <input
+                                type="text"
+                                className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                placeholder="Nama pelanggan"
+                                value={walkInForm.customerName}
+                                onChange={(e) => setWalkInForm({ ...walkInForm, customerName: e.target.value })}
+                            />
+                            <input
+                                type="tel"
+                                className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                placeholder="No. HP (opsional)"
+                                value={walkInForm.customerPhone}
+                                onChange={(e) => setWalkInForm({ ...walkInForm, customerPhone: e.target.value })}
+                            />
+                            <select
+                                className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all font-medium"
+                                value={walkInForm.serviceId}
+                                onChange={(e) => setWalkInForm({ ...walkInForm, serviceId: e.target.value })}
+                            >
+                                <option value="">Pilih layanan</option>
+                                {barberServices.map((service) => (
+                                    <option key={service.id} value={service.id}>
+                                        {service.name} ({service.duration}m)
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                type="submit"
+                                disabled={isCreatingWalkIn}
+                                className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-70 text-black font-black py-4 rounded-2xl transition-all"
+                            >
+                                {isCreatingWalkIn ? 'Menyimpan...' : 'Tambah Antrian'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

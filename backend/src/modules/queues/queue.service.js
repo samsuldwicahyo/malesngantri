@@ -306,12 +306,17 @@ async function getMyQueue(customerId) {
         include: {
             service: true,
             barber: true,
-            barbershop: { select: { name: true, address: true, phoneNumber: true, slug: true } }
+            barbershop: { select: { name: true, address: true, slug: true } }
         },
         orderBy: { createdAt: 'desc' }
     });
 
     if (!queue) return null;
+
+    const adminUser = await prisma.user.findFirst({
+        where: { barbershopId: queue.barbershopId, role: 'ADMIN' },
+        select: { phoneNumber: true }
+    });
 
     const queuesAhead = await prisma.queue.findMany({
         where: {
@@ -329,6 +334,10 @@ async function getMyQueue(customerId) {
 
     return {
         ...queue,
+        barbershop: {
+            ...queue.barbershop,
+            phoneNumber: adminUser?.phoneNumber || null
+        },
         queuesAhead,
         remainingMinutes: Math.max(0, remainingMinutes),
         positionInQueue: queue.position,

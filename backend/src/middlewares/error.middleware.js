@@ -21,6 +21,11 @@ const errorHandler = (err, req, res, next) => {
         }
     }
 
+    if (err instanceof Prisma.PrismaClientInitializationError) {
+        status = 503;
+        message = 'Database is unavailable. Please ensure PostgreSQL is running and DATABASE_URL is correct.';
+    }
+
     // Handle Validation errors (Joi)
     if (err.isJoi) {
         status = 400;
