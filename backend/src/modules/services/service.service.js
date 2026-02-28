@@ -39,10 +39,18 @@ const getServiceById = async (id, barbershopId) => {
  * Update service
  */
 const updateService = async (id, barbershopId, data) => {
-    return await prisma.service.update({
-        where: { id },
+    const result = await prisma.service.updateMany({
+        where: { id, barbershopId },
         data
     });
+
+    if (result.count === 0) {
+        const err = new Error('Service not found in this tenant');
+        err.status = 404;
+        throw err;
+    }
+
+    return prisma.service.findUnique({ where: { id } });
 };
 
 /**
@@ -50,10 +58,17 @@ const updateService = async (id, barbershopId, data) => {
  * We'll just set isActive = false or delete if requested.
  */
 const deleteService = async (id, barbershopId) => {
-    // Check if used in active queues?
-    return await prisma.service.delete({
-        where: { id }
+    const result = await prisma.service.deleteMany({
+        where: { id, barbershopId }
     });
+
+    if (result.count === 0) {
+        const err = new Error('Service not found in this tenant');
+        err.status = 404;
+        throw err;
+    }
+
+    return result;
 };
 
 module.exports = {

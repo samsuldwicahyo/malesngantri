@@ -1,20 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Sora, Space_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const sora = Sora({
+  variable: "--font-sora",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const spaceMono = Space_Mono({
+  variable: "--font-space-mono",
   subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "MalasNgantri - Solusi Antrian Barbershop Modern",
-  description: "Platform manajemen antrian barbershop tercanggih dengan estimasi real-time dan notifikasi WhatsApp.",
+  title: "Malas Ngantri | Platform Booking Barber Multi-Tenant",
+  description: "SaaS booking time-slot untuk barber: tenant public, panel admin/worker, dan superadmin global.",
 };
 
 export default function RootLayout({
@@ -24,9 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${sora.variable} ${spaceMono.variable} antialiased`}>
         {children}
       </body>
     </html>

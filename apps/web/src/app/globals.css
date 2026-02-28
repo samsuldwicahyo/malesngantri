@@ -2,15 +2,31 @@
 
 @theme {
   --color-background: #0a0a0a;
-  --color-foreground: #ffffff;
+  --color-foreground: #f5f5f4;
+  --color-panel: #121212;
+  --color-primary: #d69e2e;
+  --color-primary-strong: #b7791f;
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
+  --color-warning: #facc15;
+  --color-muted: #a3a3a3;
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     @apply antialiased;
+    font-family: var(--font-sora), ui-sans-serif, sans-serif;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(214, 158, 46, 0.14), transparent 35%),
+      radial-gradient(circle at 85% 0%, rgba(88, 28, 135, 0.12), transparent 30%),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.01), rgba(0, 0, 0, 0));
   }
 }
 
@@ -21,6 +37,14 @@
 
   .animate-fade-in {
     animation: fadeIn 1s ease-out forwards;
+  }
+
+  .surface-panel {
+    @apply rounded-3xl border border-white/10 bg-neutral-950/60 backdrop-blur;
+  }
+
+  .focus-brand {
+    @apply focus:outline-none focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400;
   }
 }
 
@@ -41,7 +65,6 @@
   color: white;
 }
 
-/* Custom scrollbar for premium look */
 ::-webkit-scrollbar {
   width: 8px;
 }

@@ -3,14 +3,40 @@ const prisma = require('../config/database');
 const notificationService = require('../services/notification.service');
 
 class NotificationJob {
+    constructor() {
+        this.task = null;
+        this.lastDbUnavailableLogAt = 0;
+    }
 
     // Run every minute to check for T-30 and T-15 notifications
     start() {
-        cron.schedule('* * * * *', async () => {
-            console.log('[NotificationJob] Checking for scheduled notifications...');
-            await this.checkT30Notifications();
-            await this.checkT15Notifications();
-            await this.checkNextInLineNotifications();
+        if (String(process.env.DISABLE_NOTIFICATION_JOB || '').toLowerCase() === 'true') {
+            console.log('[NotificationJob] Disabled by DISABLE_NOTIFICATION_JOB=true');
+            return;
+        }
+
+        this.task = cron.schedule('* * * * *', async () => {
+            try {
+                console.log('[NotificationJob] Checking for scheduled notifications...');
+                await this.checkT30Notifications();
+                await this.checkT15Notifications();
+                await this.checkNextInLineNotifications();
+            } catch (error) {
+                const isDbUnavailable =
+                    typeof prisma.isDbUnavailableError === 'function' && prisma.isDbUnavailableError(error);
+
+                if (isDbUnavailable) {
+                    const now = Date.now();
+                    // Prevent noisy logs every minute when DB is down.
+                    if (now - this.lastDbUnavailableLogAt > 60_000) {
+                        console.warn('[NotificationJob] Database unavailable, skipping this cycle.');
+                        this.lastDbUnavailableLogAt = now;
+                    }
+                    return;
+                }
+
+                console.error('[NotificationJob] Unexpected error:', error);
+            }
         });
 
         console.log('[NotificationJob] Started');
@@ -24,17 +50,13 @@ class NotificationJob {
         // Find queues that will start in 30 minutes (within 1-minute window)
         const queues = await prisma.queue.findMany({
             where: {
-                status: 'WAITING',
+                status: { in: ['BOOKED', 'CHECKED_IN'] },
                 estimatedStart: {
                     gte: twentyNineMinutesFromNow,
                     lte: thirtyMinutesFromNow
                 }
             },
-            include: {
-                service: true,
-                barber: true,
-                barbershop: true
-            }
+            select: this.queueNotificationSelect()
         });
 
         for (const queue of queues) {
@@ -61,17 +83,13 @@ class NotificationJob {
 
         const queues = await prisma.queue.findMany({
             where: {
-                status: 'WAITING',
+                status: { in: ['BOOKED', 'CHECKED_IN'] },
                 estimatedStart: {
                     gte: fourteenMinutesFromNow,
                     lte: fifteenMinutesFromNow
                 }
             },
-            include: {
-                service: true,
-                barber: true,
-                barbershop: true
-            }
+            select: this.queueNotificationSelect()
         });
 
         for (const queue of queues) {
@@ -94,14 +112,10 @@ class NotificationJob {
         // Find queues where position = 2 (next in line)
         const queues = await prisma.queue.findMany({
             where: {
-                status: 'WAITING',
+                status: { in: ['BOOKED', 'CHECKED_IN'] },
                 position: 2
             },
-            include: {
-                service: true,
-                barber: true,
-                barbershop: true
-            }
+            select: this.queueNotificationSelect()
         });
 
         for (const queue of queues) {
@@ -118,6 +132,40 @@ class NotificationJob {
                 await notificationService.sendNextInLine(queue);
             }
         }
+    }
+
+    queueNotificationSelect() {
+        return {
+            id: true,
+            queueNumber: true,
+            customerName: true,
+            customerPhone: true,
+            scheduledDate: true,
+            estimatedStart: true,
+            estimatedEnd: true,
+            status: true,
+            position: true,
+            service: {
+                select: {
+                    id: true,
+                    name: true,
+                    price: true
+                }
+            },
+            barber: {
+                select: {
+                    id: true,
+                    name: true
+                }
+            },
+            barbershop: {
+                select: {
+                    id: true,
+                    name: true,
+                    address: true
+                }
+            }
+        };
     }
 }
 

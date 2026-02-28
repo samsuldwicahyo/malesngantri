@@ -50,15 +50,28 @@ export type TenantProfile = {
   address: string;
   whatsapp: string;
   operationalHours: string;
+  description?: string;
+  coverImageUrl?: string;
+  logoImageUrl?: string;
+  mapsUrl?: string;
+  instagram?: string;
+  tiktok?: string;
+  facebook?: string;
   subscriptionStatus: SubscriptionStatus;
 };
 
 export type BarberProfile = {
   id: string;
   name: string;
+  username?: string;
+  email?: string;
   phone: string;
   socialMedia: string;
   photoUrl: string;
+  instagram?: string;
+  tiktok?: string;
+  description?: string;
+  isActive: boolean;
 };
 
 export type ServiceItem = {
@@ -66,6 +79,16 @@ export type ServiceItem = {
   name: string;
   durationMinutes: number;
   price: number;
+  description?: string;
+  isActive: boolean;
+};
+
+export type ClosedSlot = {
+  id: string;
+  bookingDate: string;
+  slotTime: string;
+  barberId: string | null;
+  note?: string;
 };
 
 export type QueueTicket = {
@@ -86,6 +109,7 @@ export type TenantState = {
   tenant: TenantProfile;
   barbers: BarberProfile[];
   services: ServiceItem[];
+  closedSlots: ClosedSlot[];
   queues: QueueTicket[];
   updatedAt: string;
 };

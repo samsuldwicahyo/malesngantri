@@ -16,7 +16,7 @@ const getAllUsers = async (req, res, next) => {
             });
         }
 
-        const result = await userService.getAllUsers(value);
+        const result = await userService.getAllUsers(value, req.user);
         res.json({
             success: true,
             data: result

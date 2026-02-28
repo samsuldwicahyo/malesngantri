@@ -28,10 +28,11 @@ async function main() {
     // 1.5 Create Super Admin User
     await prisma.user.upsert({
         where: { email: 'superadmin@barber.com' },
-        update: {},
+        update: { username: 'superadmin' },
         create: {
             fullName: 'Platform Owner',
             email: 'superadmin@barber.com',
+            username: 'superadmin',
             phoneNumber: '081111111111',
             passwordHash: passwordHash,
             role: 'SUPER_ADMIN'
@@ -41,10 +42,11 @@ async function main() {
     // 2. Create Admin User
     const adminUser = await prisma.user.upsert({
         where: { email: 'admin@barber.com' },
-        update: {},
+        update: { username: 'admin.gentleman' },
         create: {
             fullName: 'Admin Gentleman',
             email: 'admin@barber.com',
+            username: 'admin.gentleman',
             phoneNumber: '081234567890',
             passwordHash: passwordHash,
             role: 'ADMIN',
@@ -55,10 +57,11 @@ async function main() {
     // 3. Create Barber User
     const barberUser = await prisma.user.upsert({
         where: { email: 'barber@barber.com' },
-        update: {},
+        update: { username: 'budi.barber' },
         create: {
             fullName: 'Budi The Barber',
             email: 'barber@barber.com',
+            username: 'budi.barber',
             phoneNumber: '081234567891',
             passwordHash: passwordHash,
             role: 'BARBER',

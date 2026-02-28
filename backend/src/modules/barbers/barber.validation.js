@@ -17,9 +17,11 @@ const socialLinksSchema = Joi.object({
 
 const createBarberSchema = Joi.object({
     name: Joi.string().trim().min(2).max(100).required(),
+    username: Joi.string().trim().lowercase().pattern(/^[a-z0-9._-]{3,50}$/),
     nickname: Joi.string().trim().max(50),
     phone: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
     email: Joi.string().email(),
+    password: Joi.string().min(8),
     photoUrl: Joi.string().uri().allow('', null),
     bio: Joi.string().max(1000),
     specializations: Joi.array().items(Joi.string()),

@@ -168,7 +168,7 @@ const getMyStats = async (req, res, next) => {
 
         const totalQueues = await prisma.queue.count({ where: { barberId: barber.id } });
         const completedQueues = await prisma.queue.count({
-            where: { barberId: barber.id, status: 'COMPLETED' }
+            where: { barberId: barber.id, status: 'DONE' }
         });
 
         sendSuccess(res, {

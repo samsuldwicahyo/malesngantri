@@ -1,6 +1,5 @@
 const serviceService = require('./service.service');
 const { createServiceSchema, updateServiceSchema } = require('./service.validation');
-const prisma = require('../../config/database');
 
 /**
  * Create Service
@@ -89,7 +88,7 @@ const updateService = async (req, res, next) => {
 const getServiceById = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const service = await prisma.service.findUnique({ where: { id } });
+        const service = await serviceService.getServiceById(id, req.user.barbershopId);
         if (!service) {
             return res.status(404).json({ success: false, error: { message: 'Service not found' } });
         }
@@ -113,10 +112,7 @@ const updateServiceById = async (req, res, next) => {
         }
 
         const { id } = req.params;
-        const service = await prisma.service.update({
-            where: { id },
-            data: value
-        });
+        const service = await serviceService.updateService(id, req.user.barbershopId, value);
         res.json({ success: true, data: service });
     } catch (err) {
         next(err);
@@ -129,7 +125,7 @@ const updateServiceById = async (req, res, next) => {
 const deleteServiceById = async (req, res, next) => {
     try {
         const { id } = req.params;
-        await prisma.service.delete({ where: { id } });
+        await serviceService.deleteService(id, req.user.barbershopId);
         res.json({ success: true, data: { id } });
     } catch (err) {
         next(err);

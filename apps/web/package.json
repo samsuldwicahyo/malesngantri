@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev --webpack -p 3001",
+    "dev:turbo": "next dev --turbopack -p 3001",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "clean": "rimraf .next .turbo"
   },
   "dependencies": {
     "lucide-react": "^0.563.0",
@@ -23,6 +25,7 @@
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "rimraf": "^6.1.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

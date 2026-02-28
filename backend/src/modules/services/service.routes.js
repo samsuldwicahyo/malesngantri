@@ -1,15 +1,17 @@
 const express = require('express');
 const serviceController = require('./service.controller');
 const { authenticate, authorize } = require('../../middlewares/auth.middleware');
-const { validateBarbershopOwnership } = require('../../middlewares/barbershop.middleware');
+const { validateBarbershopOwnership, requireTenantOwnership } = require('../../middlewares/barbershop.middleware');
+const { requireActiveSubscription } = require('../../middlewares/subscription.middleware');
 
 const router = express.Router();
 
 router.post(
     '/barbershops/:barbershopId/services',
     authenticate,
-    authorize('ADMIN', 'SUPER_ADMIN'),
+    authorize('ADMIN'),
     validateBarbershopOwnership,
+    requireActiveSubscription(),
     serviceController.createService
 );
 
@@ -17,7 +19,8 @@ router.post(
 router.post(
     '/services',
     authenticate,
-    authorize('ADMIN', 'SUPER_ADMIN'),
+    authorize('ADMIN'),
+    requireActiveSubscription(),
     serviceController.createServiceForAdmin
 );
 
@@ -29,8 +32,10 @@ router.get(
 router.put(
     '/barbershops/:barbershopId/services/:id',
     authenticate,
-    authorize('ADMIN', 'SUPER_ADMIN'),
+    authorize('ADMIN'),
     validateBarbershopOwnership,
+    requireTenantOwnership({ model: 'service', idParam: 'id' }),
+    requireActiveSubscription({ resolutionOrder: ['tenantBarbershopId'] }),
     serviceController.updateService
 );
 
@@ -38,21 +43,27 @@ router.put(
 router.get(
     '/services/:id',
     authenticate,
-    authorize('ADMIN', 'SUPER_ADMIN'),
+    authorize('ADMIN'),
+    requireTenantOwnership({ model: 'service', idParam: 'id' }),
+    requireActiveSubscription({ resolutionOrder: ['tenantBarbershopId'] }),
     serviceController.getServiceById
 );
 
 router.put(
     '/services/:id',
     authenticate,
-    authorize('ADMIN', 'SUPER_ADMIN'),
+    authorize('ADMIN'),
+    requireTenantOwnership({ model: 'service', idParam: 'id' }),
+    requireActiveSubscription({ resolutionOrder: ['tenantBarbershopId'] }),
     serviceController.updateServiceById
 );
 
 router.delete(
     '/services/:id',
     authenticate,
-    authorize('ADMIN', 'SUPER_ADMIN'),
+    authorize('ADMIN'),
+    requireTenantOwnership({ model: 'service', idParam: 'id' }),
+    requireActiveSubscription({ resolutionOrder: ['tenantBarbershopId'] }),
     serviceController.deleteServiceById
 );
 

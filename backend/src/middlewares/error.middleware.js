@@ -23,7 +23,7 @@ const errorHandler = (err, req, res, next) => {
 
     if (err instanceof Prisma.PrismaClientInitializationError) {
         status = 503;
-        message = 'Database is unavailable. Please ensure PostgreSQL is running and DATABASE_URL is correct.';
+        message = 'Database is unavailable. Start PostgreSQL on localhost:5432 and verify DATABASE_URL (hint: docker compose up -d postgres).';
     }
 
     // Handle Validation errors (Joi)

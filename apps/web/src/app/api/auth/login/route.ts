@@ -1,83 +1,53 @@
 import { NextResponse } from 'next/server';
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:5000/api/v1';
 
-const resolveBaseUrl = () =>
-    process.env.API_BASE_URL ||
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    DEFAULT_API_BASE_URL;
+const appendSetCookies = (source: Response, target: NextResponse) => {
+    const headersWithGetSetCookie = source.headers as Headers & { getSetCookie?: () => string[] };
+    const setCookies = headersWithGetSetCookie.getSetCookie?.() || [];
 
-const resolveAltBaseUrl = (baseUrl: string) => {
-    if (baseUrl.endsWith('/api/v1')) {
-        return baseUrl.replace(/\/api\/v1$/, '');
-    }
-    return `${baseUrl}/api/v1`;
-};
-
-const normalizeBaseUrls = (baseUrl: string, host?: string | null) => {
-    const candidates = [
-        baseUrl,
-        resolveAltBaseUrl(baseUrl),
-        DEFAULT_API_BASE_URL,
-        resolveAltBaseUrl(DEFAULT_API_BASE_URL),
-        'http://localhost:3001/api/v1',
-        'http://localhost:3001'
-    ];
-
-    const seen = new Set<string>();
-    const filtered: string[] = [];
-
-    for (const url of candidates) {
-        if (!url) continue;
-        if (seen.has(url)) continue;
-        if (host && url.includes(host)) {
-            continue;
+    if (setCookies.length > 0) {
+        for (const cookie of setCookies) {
+            target.headers.append('set-cookie', cookie);
         }
-        seen.add(url);
-        filtered.push(url);
+        return;
     }
 
-    return filtered;
-};
-
-const forward = async (baseUrl: string, body: unknown) => {
-    const response = await fetch(`${baseUrl}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-    const payload = await response.json().catch(() => ({}));
-    return { response, payload };
+    const fallbackCookie = source.headers.get('set-cookie');
+    if (fallbackCookie) {
+        target.headers.set('set-cookie', fallbackCookie);
+    }
 };
 
 export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => ({}));
-        const baseUrl = resolveBaseUrl();
-        const host = request.headers.get('host');
-        const baseUrls = normalizeBaseUrls(baseUrl, host);
+        const targetUrl = `${API_BASE_URL}/auth/login`;
 
-        let lastResponse: Response | null = null;
-        let lastPayload: any = null;
+        const response = await fetch(targetUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
 
-        for (const url of baseUrls) {
-            const { response, payload } = await forward(url, body);
-            lastResponse = response;
-            lastPayload = payload;
+        const payload = await response.json().catch(() => ({}));
+        const nextResponse = NextResponse.json(payload, { status: response.status });
+        appendSetCookies(response, nextResponse);
 
-            if (![401, 404, 502, 503].includes(response.status)) {
-                return NextResponse.json(payload, { status: response.status });
-            }
-        }
-
-        return NextResponse.json(lastPayload ?? {}, { status: lastResponse?.status || 500 });
+        return nextResponse;
     } catch (error) {
+        console.error('Login Proxy Error:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         return NextResponse.json(
             {
                 success: false,
-                error: { code: 'LOGIN_PROXY_FAILED', message: 'Login proxy error' }
+                error: {
+                    code: 'BACKEND_UNREACHABLE',
+                    message: 'Backend API tidak dapat diakses. Pastikan backend + database berjalan.',
+                    details: errorMessage
+                }
             },
-            { status: 500 }
+            { status: 503 }
         );
     }
 }
