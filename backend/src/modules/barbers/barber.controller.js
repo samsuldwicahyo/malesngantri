@@ -305,7 +305,52 @@ const updateMyProfile = async (req, res, next) => {
         }
 
         const barber = await barberService.getBarberByUserId(req.user.id);
-        const updated = await barberService.updateBarber(barber.id, barber.barbershopId, value);
+        if (!barber) {
+            return res.status(404).json({
+                success: false,
+                error: { code: 'NOT_FOUND', message: 'Barber profile not found' }
+            });
+        }
+
+        if (value.phone && value.phone !== req.user.phoneNumber) {
+            const existingUser = await prisma.user.findFirst({
+                where: {
+                    phoneNumber: value.phone,
+                    NOT: { id: req.user.id }
+                }
+            });
+            if (existingUser) {
+                return res.status(409).json({
+                    success: false,
+                    error: { code: 'USER_EXISTS', message: 'Phone number already in use' }
+                });
+            }
+        }
+
+        const userUpdates = {};
+        if (value.name && value.name !== req.user.fullName) {
+            userUpdates.fullName = value.name;
+        }
+        if (value.phone && value.phone !== req.user.phoneNumber) {
+            userUpdates.phoneNumber = value.phone;
+            userUpdates.phoneVerified = false;
+            userUpdates.phoneVerifiedAt = null;
+        }
+
+        const barberUpdates = { ...value };
+
+        const updated = await prisma.$transaction(async (tx) => {
+            if (Object.keys(userUpdates).length > 0) {
+                await tx.user.update({
+                    where: { id: req.user.id },
+                    data: userUpdates
+                });
+            }
+            return tx.barber.update({
+                where: { id: barber.id },
+                data: barberUpdates
+            });
+        });
 
         sendSuccess(res, { barber: updated }, 'Profile updated successfully');
     } catch (err) {

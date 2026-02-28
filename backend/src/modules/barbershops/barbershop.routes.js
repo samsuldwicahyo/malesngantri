@@ -1,6 +1,7 @@
 const express = require('express');
 const barbershopController = require('./barbershop.controller');
 const { authenticate, authorize } = require('../../middlewares/auth.middleware');
+const { validateBarbershopOwnership } = require('../../middlewares/barbershop.middleware');
 
 const router = express.Router();
 
@@ -9,6 +10,13 @@ router.get('/barbershops', barbershopController.listBarbershops);
 router.get('/barbershops/slug/:slug', barbershopController.getBarbershopBySlug);
 router.get('/barbershops/:id', barbershopController.getBarbershop);
 router.get('/barbershops/:id/barbers', barbershopController.listPublicBarbers);
+router.patch(
+    '/barbershops/:id',
+    authenticate,
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    validateBarbershopOwnership,
+    barbershopController.updateBarbershop
+);
 
 // Admin
 router.get(

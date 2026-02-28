@@ -1,275 +1,213 @@
 import Link from 'next/link';
 
+const roles = [
+  {
+    title: 'Customer (Pelanggan)',
+    route: '/t/{nama-barber}',
+    description:
+      'Daftar ringan pakai WhatsApp, pilih pemangkas, pilih layanan, pilih jam, lalu booking dari rumah.',
+  },
+  {
+    title: 'Worker (Pemangkas Rambut)',
+    route: '/t/{nama-barber}/admin',
+    description:
+      'Menerima booking baru, konfirmasi pelanggan sudah datang, mulai layanan, lalu selesaikan.',
+  },
+  {
+    title: 'Admin Barber (Pemilik Usaha)',
+    route: '/t/{nama-barber}/admin',
+    description:
+      'Kelola worker, jadwal, layanan, booking pelanggan, serta branding landing page barber.',
+  },
+  {
+    title: 'Superadmin Platform',
+    route: '/',
+    description:
+      'Kelola tenant, paket, status subscription, dan monitoring platform SaaS.',
+  },
+];
+
+const bookingStatuses = [
+  'Sudah Booking (BOOKED)',
+  'Sudah Datang (CHECKED_IN)',
+  'Sedang Dilayani (IN_SERVICE)',
+  'Selesai (DONE)',
+  'Dibatalkan (CANCELED)',
+  'Tidak Hadir (NO_SHOW)',
+];
+
+const valuePropositions = [
+  'Website siap pakai untuk promosi usaha barber',
+  'Sistem booking berbasis jam (bukan antrean manual)',
+  'Update status langsung terlihat oleh pelanggan',
+  'SaaS subscription bulanan / tahunan',
+  'Single-business tenant: data tiap barber terisolasi',
+  'Tampilan sederhana dan nyaman di HP',
+];
+
+const glossary = [
+  { term: 'Tenant', meaning: 'Satu akun usaha barber yang berlangganan.' },
+  { term: 'Worker', meaning: 'Pemangkas rambut yang melayani pelanggan.' },
+  { term: 'Time-Slot', meaning: 'Jam booking, contoh 10:30 atau 14:00.' },
+  { term: 'Check-In', meaning: 'Tanda bahwa pelanggan sudah datang ke lokasi.' },
+];
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-amber-500/30">
-      {/* Navigation */}
-      <nav className="flex items-center justify-between p-6 max-w-7xl mx-auto backdrop-blur-md bg-black/50 sticky top-0 z-50 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-amber-500 rounded-lg rotate-12 flex items-center justify-center font-bold text-black border-2 border-white/10">M</div>
-          <span className="text-xl font-bold tracking-tighter">MALAS<span className="text-amber-500">NGANTRI</span></span>
-        </div>
-        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-neutral-400">
-          <Link href="#features" className="hover:text-amber-500 transition-colors">Features</Link>
-          <Link href="#pricing" className="hover:text-amber-500 transition-colors">Pricing</Link>
-          <Link href="#about" className="hover:text-amber-500 transition-colors">About</Link>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/auth/login" className="px-4 py-2 text-sm font-medium hover:text-amber-500 transition-colors">Login</Link>
-          <Link href="#explore" className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-2 rounded-full text-sm font-bold transition-all hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.3)]">Get Started</Link>
-        </div>
-      </nav>
-
-      {/* Hero Section */}
-      <section className="relative pt-32 pb-20 px-6 overflow-hidden">
-        <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 w-[600px] h-[600px] bg-amber-500/10 blur-[120px] rounded-full" />
-        <div className="absolute bottom-0 left-0 translate-y-1/2 -translate-x-1/2 w-[400px] h-[400px] bg-blue-500/5 blur-[100px] rounded-full" />
-
-        <div className="max-w-4xl mx-auto text-center relative z-10">
-          <div className="inline-block px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-amber-500 text-xs font-semibold uppercase tracking-widest mb-6 animate-fade-in">
-            New Era of Grooming Management
-          </div>
-          <h1 className="text-6xl md:text-8xl font-black tracking-tightest leading-tight mb-8">
-            Antre Itu <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-orange-400 italic">Kuno</span>, <br />
-            Modern Itu <span className="underline decoration-amber-500/50 underline-offset-8">Gampang.</span>
-          </h1>
-          <p className="text-xl text-neutral-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Platform manajemen antrian barbershop tercanggih. Estimasi real-time,
-            notifikasi WhatsApp otomatis, dan efisiensi barber yang meningkat.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="#explore" className="w-full sm:w-auto bg-amber-500 hover:bg-amber-400 text-black px-10 py-5 rounded-2xl text-lg font-bold transition-all hover:-translate-y-1 shadow-[0_10px_40px_rgba(245,158,11,0.4)]">
-              Cari Barbershop
-            </Link>
-            <Link href="#partner" className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 px-10 py-5 rounded-2xl text-lg font-bold transition-all hover:-translate-y-1">
-              Daftarkan Barbershop Anda
-            </Link>
-          </div>
-          <div className="mt-10 inline-flex flex-col sm:flex-row items-center justify-center gap-3 rounded-[2rem] border border-white/10 bg-neutral-900/50 px-4 py-3">
-            <span className="text-xs font-black uppercase tracking-widest text-neutral-500">Masuk Sebagai</span>
-            <Link
-              href="/customer"
-              className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 px-6 py-3 rounded-2xl text-sm font-bold transition-all"
-            >
-              Customer
-            </Link>
-            <Link
-              href="/auth/login"
-              className="w-full sm:w-auto bg-amber-500/90 hover:bg-amber-500 text-black px-6 py-3 rounded-2xl text-sm font-black transition-all"
-            >
-              Admin / Barber
-            </Link>
-            <Link
-              href="/super-admin"
-              className="w-full sm:w-auto bg-white text-black px-6 py-3 rounded-2xl text-sm font-black transition-all hover:bg-neutral-200"
-            >
-              Super Admin
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Stats mockup */}
-      <section className="px-6 py-20 bg-neutral-900/50 border-y border-white/5">
-        <div className="max-w-7xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-8">
-          <div className="text-center">
-            <div className="text-4xl font-black text-amber-500 mb-2">500+</div>
-            <div className="text-sm uppercase tracking-widest text-neutral-500 font-bold">Barbershops</div>
-          </div>
-          <div className="text-center">
-            <div className="text-4xl font-black text-white mb-2">1M+</div>
-            <div className="text-sm uppercase tracking-widest text-neutral-500 font-bold">Cuts Managed</div>
-          </div>
-          <div className="text-center">
-            <div className="text-4xl font-black text-white mb-2">99%</div>
-            <div className="text-sm uppercase tracking-widest text-neutral-500 font-bold">Customer Happy</div>
-          </div>
-          <div className="text-center">
-            <div className="text-4xl font-black text-white mb-2">0</div>
-            <div className="text-sm uppercase tracking-widest text-neutral-500 font-bold">Bad Hair Days</div>
-          </div>
-        </div>
-      </section>
-
-      {/* Explore */}
-      <section id="explore" className="py-28 px-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-12">
-            <div>
-              <h2 className="text-4xl md:text-5xl font-black mb-4 leading-tight">
-                Pilih Barbershop <span className="text-amber-500">Terbaik.</span>
-              </h2>
-              <p className="text-neutral-400 max-w-2xl">
-                Temukan barbershop favorit, lihat layanan, dan ambil nomor antrian langsung dari ponsel Anda.
-              </p>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_0%_0%,rgba(34,211,238,0.2),transparent_35%),radial-gradient(circle_at_100%_0%,rgba(251,113,133,0.2),transparent_30%),#04070e] text-neutral-100">
+      <div className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pt-8">
+        <header className="rounded-3xl border border-white/10 bg-black/40 p-4 backdrop-blur sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-300 font-black text-cyan-950">
+                M
+              </div>
+              <div>
+                <p className="text-lg font-black tracking-tight">Malas Ngantri</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">
+                  Website Booking Barber
+                </p>
+              </div>
             </div>
-            <Link href="#features" className="bg-white/5 hover:bg-white/10 border border-white/10 px-6 py-3 rounded-2xl text-sm font-bold transition-all">
-              Lihat Fitur
-            </Link>
-          </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              { name: 'The Gentleman Barber', slug: 'the-gentleman-barber', city: 'Jakarta', rating: '4.9' },
-              { name: 'Classic Cut Studio', slug: 'classic-cut-studio', city: 'Bandung', rating: '4.8' },
-              { name: 'Modern Fade Lab', slug: 'modern-fade-lab', city: 'Surabaya', rating: '4.7' }
-            ].map((shop) => (
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
               <Link
-                key={shop.slug}
-                href={`/${shop.slug}`}
-                className="group bg-neutral-900/60 border border-white/5 rounded-[2rem] p-6 hover:border-white/10 transition-all"
+                href="/auth/register"
+                className="w-full rounded-xl bg-rose-400 px-4 py-2 text-center text-xs font-black uppercase tracking-widest text-rose-950 sm:w-auto"
               >
-                <div className="h-40 rounded-2xl bg-neutral-800 mb-5 overflow-hidden">
-                  <div className="w-full h-full bg-[url('https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=800&auto=format&fit=crop')] bg-cover bg-center group-hover:scale-105 transition-transform duration-700" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-black">{shop.name}</h3>
-                  <span className="text-amber-500 font-black text-sm">{shop.rating}</span>
-                </div>
-                <p className="text-neutral-500 text-sm mt-1">{shop.city}</p>
-                <div className="mt-4 inline-flex items-center gap-2 text-amber-500 text-xs font-black uppercase tracking-widest">
-                  Lihat Detail
-                  <span className="w-4 h-[2px] bg-amber-500" />
-                </div>
+                Daftarkan Usaha Barber
               </Link>
+              <Link
+                href="/auth/login"
+                className="w-full rounded-xl border border-white/20 px-4 py-2 text-center text-xs font-bold uppercase tracking-widest hover:bg-white/10 sm:w-auto"
+              >
+                Login Dashboard
+              </Link>
+            </div>
+          </div>
+        </header>
+
+        <section className="grid gap-6 py-12 lg:grid-cols-[1.5fr_1fr] lg:items-end">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-cyan-200">B2B SaaS - Booking First</p>
+            <h1 className="mt-4 text-3xl font-black leading-tight sm:text-4xl md:text-6xl">
+              Website + Booking Online Barber
+              <span className="block text-rose-300">untuk Usaha Perorangan</span>
+            </h1>
+            <p className="mt-5 max-w-2xl text-sm leading-relaxed text-neutral-300 md:text-base">
+              Malas Ngantri adalah produk `SaaS` yang menggabungkan website branding + sistem booking
+              time-slot online, sehingga pelanggan bisa memesan layanan tanpa harus menunggu antrean
+              fisik di lokasi.
+            </p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/t/barber-jaya"
+                className="w-full rounded-2xl bg-cyan-300 px-5 py-3 text-center text-sm font-black uppercase tracking-widest text-cyan-950 sm:w-auto"
+              >
+                Lihat Contoh Halaman Barber
+              </Link>
+              <Link
+                href="/t/barber-jaya/admin"
+                className="w-full rounded-2xl bg-rose-300 px-5 py-3 text-center text-sm font-black uppercase tracking-widest text-rose-950 sm:w-auto"
+              >
+                Lihat Dashboard Admin
+              </Link>
+              <Link
+                href="/super-admin"
+                className="w-full rounded-2xl border border-white/20 px-5 py-3 text-center text-sm font-bold uppercase tracking-widest hover:bg-white/10 sm:w-auto"
+              >
+                Panel Superadmin
+              </Link>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-black/45 p-4 sm:p-6">
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-neutral-400">Routing Multi-Tenant</p>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-xl border border-white/10 bg-neutral-900/70 px-3 py-2">
+                <p className="font-bold text-cyan-200">malesngantri.com</p>
+                <p className="text-neutral-400">Landing utama, registrasi tenant, dan superadmin.</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-neutral-900/70 px-3 py-2">
+                <p className="font-bold text-rose-200">malesngantri.com/t/barber-jaya</p>
+                <p className="text-neutral-400">Landing publik tenant + tombol booking online.</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-neutral-900/70 px-3 py-2">
+                <p className="font-bold text-amber-200">malesngantri.com/t/barber-jaya/admin</p>
+                <p className="text-neutral-400">Dashboard admin barber dan worker/pemangkas.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-black/40 p-4 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-2xl font-black">Peran Pengguna</h2>
+            <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">Role & Permission Berlapis</p>
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {roles.map((role) => (
+              <article key={role.title} className="rounded-2xl border border-white/10 bg-neutral-900/70 p-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">{role.route}</p>
+                <h3 className="mt-2 text-lg font-black text-cyan-100">{role.title}</h3>
+                <p className="mt-2 text-sm text-neutral-300">{role.description}</p>
+              </article>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Dynamic Queue Card Demo */}
-      <section id="features" className="py-32 px-6">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center">
-          <div>
-            <h2 className="text-4xl md:text-5xl font-black mb-6 leading-tight">
-              Lacak Antrian Secara <br />
-              <span className="text-amber-500">Real-Time.</span>
-            </h2>
-            <p className="text-lg text-neutral-400 mb-8 leading-relaxed">
-              Customer tidak perlu lagi menebak kapan giliran mereka. Algoritma kami
-              menghitung estimasi berdasarkan kecepatan historical barber dan durasi layanan.
+        <section className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+          <article className="rounded-3xl border border-white/10 bg-black/40 p-4 sm:p-6">
+            <h2 className="text-2xl font-black">Alur Status Booking</h2>
+            <p className="mt-2 text-sm text-neutral-400">
+              Flow utama: BOOKED -&gt; CHECKED_IN -&gt; IN_SERVICE -&gt; DONE dengan status tambahan
+              CANCELED dan NO_SHOW.
             </p>
-            <ul className="space-y-4">
-              {['Live Tracker Dashboard', 'WhatsApp T-30 Reminder', 'Dynamic Wait Times'].map((feature) => (
-                <li key={feature} className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 font-bold text-xs cursor-default">✓</div>
-                  <span className="font-medium text-neutral-200">{feature}</span>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {bookingStatuses.map((status) => (
+                <span
+                  key={status}
+                  className="rounded-full border border-white/20 bg-neutral-900 px-3 py-1 text-xs font-black tracking-widest"
+                >
+                  {status}
+                </span>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-3xl border border-white/10 bg-black/40 p-4 sm:p-6">
+            <h2 className="text-2xl font-black">Nilai Produk</h2>
+            <ul className="mt-4 space-y-2 text-sm text-neutral-300">
+              {valuePropositions.map((item) => (
+                <li key={item} className="rounded-xl border border-white/10 bg-neutral-900/70 px-3 py-2">
+                  {item}
                 </li>
               ))}
             </ul>
-          </div>
+          </article>
+        </section>
 
-          <div className="bg-neutral-900 rounded-[2.5rem] p-8 border border-white/10 shadow-2xl relative group">
-            <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-500 rounded-[2.6rem] blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
-            <div className="relative">
-              <div className="flex justify-between items-center mb-8">
-                <div>
-                  <h3 className="text-2xl font-bold">Antrian Anda</h3>
-                  <p className="text-sm text-neutral-500">The Gentlemen Barbershop</p>
-                </div>
-                <div className="bg-amber-500/10 text-amber-500 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border border-amber-500/20">
-                  On Chain
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <div className="p-6 rounded-3xl bg-neutral-800 border border-white/5">
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="text-neutral-500 text-sm font-medium uppercase tracking-wider">Estimasi Tunggu</span>
-                    <span className="text-3xl font-black text-amber-500">12 Menit</span>
-                  </div>
-                  <div className="h-2 w-full bg-neutral-700 rounded-full overflow-hidden">
-                    <div className="h-full w-[80%] bg-gradient-to-r from-amber-500 to-orange-500" />
-                  </div>
-                </div>
-
-                <div className="flex gap-4 p-4 rounded-3xl bg-neutral-950/50 border border-white/5 items-center">
-                  <div className="w-12 h-12 bg-neutral-800 rounded-full border border-white/10" />
-                  <div>
-                    <div className="font-bold text-white">Barber Rudi</div>
-                    <div className="text-xs text-neutral-500 font-medium">Haircut & Styling</div>
-                  </div>
-                  <div className="ml-auto text-amber-500 font-black">#3</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="py-28 px-6 bg-neutral-900/40 border-y border-white/5">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl md:text-5xl font-black mb-4">Pricing for Every Size</h2>
-            <p className="text-neutral-400 max-w-2xl mx-auto">Mulai dari paket hemat hingga enterprise. Upgrade kapan saja.</p>
-          </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              { name: 'Starter', price: 'Gratis', desc: 'Cocok untuk barbershop baru', highlight: false },
-              { name: 'Pro', price: 'Rp 299K', desc: 'Untuk barbershop berkembang', highlight: true },
-              { name: 'Enterprise', price: 'Custom', desc: 'Multi-cabang dan SLA', highlight: false }
-            ].map((tier) => (
-              <div
-                key={tier.name}
-                className={`rounded-[2.5rem] p-8 border ${tier.highlight ? 'border-amber-500/40 bg-amber-500/10' : 'border-white/5 bg-neutral-900/60'} shadow-2xl`}
-              >
-                <div className="text-xs font-black uppercase tracking-widest text-neutral-500">{tier.name}</div>
-                <div className="text-3xl font-black mt-4">{tier.price}</div>
-                <p className="text-neutral-400 mt-3">{tier.desc}</p>
-                <ul className="mt-6 space-y-3 text-sm text-neutral-300">
-                  <li>• Antrian real-time</li>
-                  <li>• Notifikasi otomatis</li>
-                  <li>• Dashboard performa</li>
-                </ul>
-                <Link href="#partner" className="mt-8 inline-flex w-full items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 py-3 rounded-2xl font-bold transition-all">
-                  Pilih Paket
-                </Link>
+        <section className="mt-6 rounded-3xl border border-cyan-200/20 bg-cyan-400/10 p-4 sm:p-6">
+          <h2 className="text-2xl font-black text-cyan-100">Kamus Istilah Singkat</h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {glossary.map((item) => (
+              <div key={item.term} className="rounded-xl border border-cyan-100/20 bg-cyan-950/30 p-3">
+                <p className="text-sm font-black text-cyan-100">{item.term}</p>
+                <p className="mt-1 text-xs text-cyan-50/90">{item.meaning}</p>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* About */}
-      <section id="about" className="py-28 px-6">
-        <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
-          <div>
-            <h2 className="text-4xl md:text-5xl font-black mb-6">About MalasNgantri</h2>
-            <p className="text-neutral-400 leading-relaxed">
-              MalasNgantri membantu barbershop mengelola antrian, booking, dan performa barber secara real-time.
-              Dibangun untuk mengurangi waktu tunggu dan meningkatkan pengalaman pelanggan.
-            </p>
-          </div>
-          <div className="bg-neutral-900/60 border border-white/5 rounded-[2.5rem] p-8">
-            <div className="text-sm text-neutral-500 uppercase tracking-widest font-bold mb-3">Why Us</div>
-            <div className="text-xl font-black mb-4">Lebih cepat, lebih rapi, lebih puas.</div>
-            <p className="text-neutral-400">
-              Fokus pada efisiensi operasional dan pengalaman pelanggan dengan tampilan yang modern dan mudah dipakai.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Partner */}
-      <section id="partner" className="py-28 px-6 bg-neutral-900/40 border-t border-white/5">
-        <div className="max-w-5xl mx-auto text-center">
-          <div className="inline-block px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-amber-500 text-xs font-semibold uppercase tracking-widest mb-6">
-            Partner Program
-          </div>
-          <h2 className="text-4xl md:text-5xl font-black mb-6">Daftarkan Barbershop Anda</h2>
-          <p className="text-neutral-400 max-w-2xl mx-auto mb-10">
-            Bergabung sebagai partner dan mulai kelola antrian secara profesional. Kami bantu onboarding dan setup.
+        <section className="mt-6 rounded-3xl border border-cyan-200/20 bg-cyan-400/10 p-4 sm:p-6">
+          <h2 className="text-2xl font-black text-cyan-100">Positioning Produk</h2>
+          <p className="mt-2 max-w-3xl text-sm text-cyan-50/90">
+            Produk ini bukan sekadar sistem antrean. Positioning utamanya adalah:
+            `Website siap pakai + sistem booking + branding digital untuk barber perorangan`.
+            Ini nilai jual yang kuat karena barber dapat operasional dan promosi dari satu platform.
           </p>
-          <Link href="/auth/login" className="bg-amber-500 hover:bg-amber-400 text-black px-10 py-4 rounded-2xl text-lg font-bold transition-all shadow-[0_10px_40px_rgba(245,158,11,0.35)]">
-            Ajukan Partnership
-          </Link>
-        </div>
-      </section>
-
-      <footer className="py-12 border-t border-white/5 text-center text-neutral-600 text-sm font-medium uppercase tracking-widest">
-        &copy; 2026 MalasNgantri Platform. Built with 🔥
-      </footer>
-    </div>
+        </section>
+      </div>
+    </main>
   );
 }

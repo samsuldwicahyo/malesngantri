@@ -165,7 +165,9 @@ export default function LoginPage() {
 
                 <div className="text-center pt-8">
                     <p className="text-neutral-500 text-sm">Don't have a barbershop yet?</p>
-                    <button className="text-white font-bold hover:text-amber-500 transition-colors mt-2">Apply for Partnership</button>
+                    <Link href="/auth/register" className="text-white font-bold hover:text-amber-500 transition-colors mt-2 inline-flex">
+                        Apply for Partnership
+                    </Link>
                     <div className="mt-4 text-xs text-neutral-500">
                         Customer?{' '}
                         <Link href="/customer/register" className="text-amber-500 font-bold hover:underline">

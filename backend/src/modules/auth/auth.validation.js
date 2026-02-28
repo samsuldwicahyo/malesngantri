@@ -26,7 +26,7 @@ const customerRegisterSchema = Joi.object({
  * Login validation schema
  */
 const loginSchema = Joi.object({
-    email: Joi.string().email().required(),
+    email: Joi.string().trim().min(3).required(),
     password: Joi.string().required()
 });
 

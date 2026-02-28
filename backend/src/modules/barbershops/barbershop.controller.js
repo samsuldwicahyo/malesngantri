@@ -1,4 +1,5 @@
 const prisma = require('../../config/database');
+const { updateBarbershopSchema } = require('./barbershop.validation');
 
 const defaultHours = {
     openingTime: '09:00',
@@ -6,6 +7,7 @@ const defaultHours = {
 };
 
 const buildBarbershopView = async (shop) => {
+    const settings = typeof shop.settings === 'object' && shop.settings ? shop.settings : {};
     const [reviewAgg, activeQueues, adminUser] = await Promise.all([
         prisma.review.aggregate({
             where: { barbershopId: shop.id },
@@ -37,12 +39,14 @@ const buildBarbershopView = async (shop) => {
         timezone: shop.timezone,
         subscriptionStatus: shop.subscriptionStatus,
         isOpen: true,
-        openingTime: defaultHours.openingTime,
-        closingTime: defaultHours.closingTime,
+        openingTime: settings.openingTime || defaultHours.openingTime,
+        closingTime: settings.closingTime || defaultHours.closingTime,
         averageRating,
         totalReviews,
         activeQueues,
         phoneNumber: adminUser?.phoneNumber || null,
+        description: settings.description || null,
+        socialLinks: settings.socialLinks || {},
         latitude: null,
         longitude: null,
         createdAt: shop.createdAt,
@@ -233,6 +237,68 @@ const listBarbershopCustomers = async (req, res, next) => {
     }
 };
 
+const updateBarbershop = async (req, res, next) => {
+    try {
+        const { error, value } = updateBarbershopSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: error.details[0].message }
+            });
+        }
+
+        const { id } = req.params;
+        const shop = await prisma.barbershop.findUnique({ where: { id } });
+        if (!shop) {
+            return res.status(404).json({ success: false, error: { message: 'Barbershop not found' } });
+        }
+
+        const settings = typeof shop.settings === 'object' && shop.settings ? { ...shop.settings } : {};
+
+        const applySetting = (key, val) => {
+            if (val === undefined) return;
+            if (val === null || val === '') {
+                delete settings[key];
+            } else {
+                settings[key] = val;
+            }
+        };
+
+        const cleanSocialLinks = (links) => {
+            if (!links || typeof links !== 'object') return null;
+            const cleaned = {};
+            Object.entries(links).forEach(([k, v]) => {
+                if (v !== null && v !== undefined && String(v).trim() !== '') {
+                    cleaned[k] = v;
+                }
+            });
+            return Object.keys(cleaned).length ? cleaned : null;
+        };
+
+        applySetting('description', value.description);
+        applySetting('openingTime', value.openingTime);
+        applySetting('closingTime', value.closingTime);
+        applySetting('socialLinks', cleanSocialLinks(value.socialLinks));
+
+        const data = {};
+        if (Object.prototype.hasOwnProperty.call(value, 'name')) data.name = value.name;
+        if (Object.prototype.hasOwnProperty.call(value, 'address')) data.address = value.address;
+        if (Object.prototype.hasOwnProperty.call(value, 'logoUrl')) data.logoUrl = value.logoUrl;
+        if (Object.prototype.hasOwnProperty.call(value, 'timezone')) data.timezone = value.timezone;
+        data.settings = settings;
+
+        const updated = await prisma.barbershop.update({
+            where: { id },
+            data
+        });
+
+        const view = await buildBarbershopView(updated);
+        res.json({ success: true, data: view, message: 'Barbershop updated' });
+    } catch (err) {
+        next(err);
+    }
+};
+
 module.exports = {
     listBarbershops,
     getBarbershopBySlug,
@@ -240,5 +306,6 @@ module.exports = {
     listPublicBarbers,
     listBarbershopQueues,
     getBarbershopStats,
-    listBarbershopCustomers
+    listBarbershopCustomers,
+    updateBarbershop
 };

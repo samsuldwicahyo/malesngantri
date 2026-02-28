@@ -6,7 +6,7 @@ const prisma = require('../config/database');
  */
 const validateBarbershopOwnership = async (req, res, next) => {
     try {
-        const { barbershopId } = req.params;
+        const barbershopId = req.params.barbershopId || req.params.id;
         const { id: userId, role, barbershopId: userBarbershopId } = req.user;
 
         // SUPER_ADMIN can bypass ownership check (if needed in future)
