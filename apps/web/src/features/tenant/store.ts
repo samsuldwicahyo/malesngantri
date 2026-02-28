@@ -19,22 +19,60 @@ export const getStorageKey = (slug: string): string => {
   return `${STORAGE_PREFIX}:${slug}`;
 };
 
+const normalizeTenantState = (state: TenantState): TenantState => {
+  const seed = getTenantSeed(state.tenant.slug);
+
+  return {
+    ...state,
+    tenant: {
+      ...seed.tenant,
+      ...state.tenant,
+      description: state.tenant.description ?? seed.tenant.description ?? '',
+      coverImageUrl: state.tenant.coverImageUrl ?? seed.tenant.coverImageUrl ?? '',
+      logoImageUrl: state.tenant.logoImageUrl ?? seed.tenant.logoImageUrl ?? '',
+      mapsUrl: state.tenant.mapsUrl ?? seed.tenant.mapsUrl ?? '',
+      instagram: state.tenant.instagram ?? seed.tenant.instagram ?? '',
+      tiktok: state.tenant.tiktok ?? seed.tenant.tiktok ?? '',
+      facebook: state.tenant.facebook ?? seed.tenant.facebook ?? '',
+    },
+    barbers: state.barbers.map((barber) => ({
+      ...barber,
+      username: barber.username ?? barber.name.toLowerCase().replace(/\s+/g, '.'),
+      email: barber.email ?? '',
+      socialMedia: barber.socialMedia || barber.instagram || barber.tiktok || '',
+      instagram: barber.instagram ?? '',
+      tiktok: barber.tiktok ?? '',
+      description: barber.description ?? '',
+      isActive: barber.isActive ?? true,
+    })),
+    services: state.services.map((service) => ({
+      ...service,
+      description: service.description ?? '',
+      isActive: service.isActive ?? true,
+    })),
+    closedSlots: state.closedSlots ?? [],
+  };
+};
+
 export const loadTenantState = (slug: string): TenantState => {
   if (typeof window === 'undefined') {
-    return getTenantSeed(slug);
+    return normalizeTenantState(getTenantSeed(slug));
   }
 
   const raw = window.localStorage.getItem(getStorageKey(slug));
   if (!raw) {
-    const seed = getTenantSeed(slug);
+    const seed = normalizeTenantState(getTenantSeed(slug));
     persistTenantState(slug, seed);
     return seed;
   }
 
   try {
-    return JSON.parse(raw) as TenantState;
+    const parsed = JSON.parse(raw) as TenantState;
+    const normalized = normalizeTenantState(parsed);
+    persistTenantState(slug, normalized);
+    return normalized;
   } catch {
-    const seed = getTenantSeed(slug);
+    const seed = normalizeTenantState(getTenantSeed(slug));
     persistTenantState(slug, seed);
     return seed;
   }
@@ -85,7 +123,7 @@ export const countQueueAhead = (queues: QueueTicket[], currentQueueId: string): 
 };
 
 const ALLOWED_TRANSITIONS: Record<QueueStatus, QueueStatus[]> = {
-  BOOKED: ['CHECKED_IN', 'CANCELED'],
+  BOOKED: ['CHECKED_IN', 'CANCELED', 'NO_SHOW'],
   CHECKED_IN: ['IN_SERVICE', 'NO_SHOW', 'CANCELED'],
   IN_SERVICE: ['DONE'],
   DONE: [],
@@ -133,11 +171,15 @@ export const addQueueTicket = (
     bookingDate: string;
     slotTime: string;
     source: 'ONLINE' | 'OFFLINE';
+    /** Optional: use server-assigned id so local state matches DB */
+    overrideId?: string;
+    /** Optional: use server-assigned booking code */
+    overrideBookingCode?: string;
   },
 ): TenantState => {
   const queue: QueueTicket = {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    bookingCode: getBookingCode(state),
+    id: payload.overrideId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    bookingCode: payload.overrideBookingCode ?? getBookingCode(state),
     customerName: payload.customerName,
     customerWhatsapp: payload.customerWhatsapp,
     barberId: payload.barberId,
@@ -145,7 +187,7 @@ export const addQueueTicket = (
     bookingDate: payload.bookingDate,
     slotTime: payload.slotTime,
     source: payload.source,
-    status: 'BOOKED',
+    status: payload.source === 'OFFLINE' ? 'CHECKED_IN' : 'BOOKED',
     createdAt: new Date().toISOString(),
   };
 

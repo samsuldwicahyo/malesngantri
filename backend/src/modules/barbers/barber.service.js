@@ -1,4 +1,3 @@
-const bcrypt = require('bcryptjs');
 const prisma = require('../../config/database');
 const authService = require('../auth/auth.service');
 
@@ -14,16 +13,48 @@ const generateUsername = (name) => {
  */
 const createBarber = async (barbershopId, data) => {
     const {
-        name, phone, email, nickname, bio, specializations, photoUrl, socialLinks,
+        name, username, password, phone, email, nickname, bio, specializations, photoUrl, socialLinks,
         experienceYears, commissionType, commissionValue, commissionBase,
         services, schedule
     } = data;
 
     // Generate credentials
-    const username = generateUsername(name);
-    const password = Math.random().toString(36).slice(-8); // 8 char random password
-    const passwordHash = await authService.hashPassword(password);
-    const userEmail = email || `${username}@malasngantri.com`;
+    const generatedUsername = generateUsername(name);
+    const resolvedUsername = (username || generatedUsername).toLowerCase();
+    const resolvedPassword = password || Math.random().toString(36).slice(-8); // 8 char random password
+    const passwordHash = await authService.hashPassword(resolvedPassword);
+    const userEmail = email || `${resolvedUsername}@malasngantri.com`;
+
+    const existingUser = await prisma.user.findFirst({
+        where: {
+            barbershopId,
+            role: 'BARBER',
+            OR: [
+                { email: userEmail },
+                { username: resolvedUsername }
+            ]
+        },
+        select: { id: true }
+    });
+    if (existingUser) {
+        const err = new Error('Email/username already used in this tenant');
+        err.status = 409;
+        throw err;
+    }
+
+    if (services && services.length > 0) {
+        const allowedServices = await prisma.service.count({
+            where: {
+                id: { in: services },
+                barbershopId
+            }
+        });
+        if (allowedServices !== services.length) {
+            const err = new Error('One or more services do not belong to this tenant');
+            err.status = 400;
+            throw err;
+        }
+    }
 
     // Execute in transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -32,6 +63,7 @@ const createBarber = async (barbershopId, data) => {
             data: {
                 fullName: name,
                 email: userEmail, // Fallback email
+                username: resolvedUsername,
                 phoneNumber: phone,
                 passwordHash,
                 role: 'BARBER',
@@ -83,7 +115,7 @@ const createBarber = async (barbershopId, data) => {
             });
         }
 
-        return { barber, username, password, email: userEmail };
+        return { barber, username: resolvedUsername, password: resolvedPassword, email: userEmail };
     });
 
     return result;
@@ -161,14 +193,43 @@ const updateBarber = async (barberId, barbershopId, data) => {
     const { services, ...barberData } = data;
 
     return await prisma.$transaction(async (tx) => {
+        const existing = await tx.barber.findFirst({
+            where: { id: barberId, barbershopId, deletedAt: null },
+            select: { id: true }
+        });
+        if (!existing) {
+            const err = new Error('Barber not found in this tenant');
+            err.status = 404;
+            throw err;
+        }
+
         // Update basic info
-        const barber = await tx.barber.update({
-            where: { id: barberId },
+        const updateResult = await tx.barber.updateMany({
+            where: { id: barberId, barbershopId, deletedAt: null },
             data: barberData
         });
+        if (updateResult.count === 0) {
+            const err = new Error('Barber not found in this tenant');
+            err.status = 404;
+            throw err;
+        }
+
+        const barber = await tx.barber.findUnique({ where: { id: barberId } });
 
         // Update services if provided
         if (services) {
+            const allowedServices = await tx.service.count({
+                where: {
+                    id: { in: services },
+                    barbershopId
+                }
+            });
+            if (allowedServices !== services.length) {
+                const err = new Error('One or more services do not belong to this tenant');
+                err.status = 400;
+                throw err;
+            }
+
             await tx.barberService.deleteMany({ where: { barberId } });
             if (services.length > 0) {
                 await tx.barberService.createMany({
@@ -191,22 +252,37 @@ const deleteBarber = async (barberId, barbershopId) => {
     // Check for active queues (TODO: Implement when Queue module exists)
 
     return await prisma.$transaction(async (tx) => {
-        const barber = await tx.barber.update({
-            where: { id: barberId },
+        const existing = await tx.barber.findFirst({
+            where: { id: barberId, barbershopId, deletedAt: null },
+            select: { id: true, userId: true }
+        });
+        if (!existing) {
+            const err = new Error('Barber not found in this tenant');
+            err.status = 404;
+            throw err;
+        }
+
+        const updateResult = await tx.barber.updateMany({
+            where: { id: existing.id, barbershopId, deletedAt: null },
             data: {
                 deletedAt: new Date(),
                 isActive: false,
                 status: 'OFFLINE'
             }
         });
+        if (updateResult.count === 0) {
+            const err = new Error('Barber not found in this tenant');
+            err.status = 404;
+            throw err;
+        }
 
         // Deactivate associated user
         await tx.user.update({
-            where: { id: barber.userId },
+            where: { id: existing.userId },
             data: { deletedAt: new Date() }
         });
 
-        return barber;
+        return tx.barber.findUnique({ where: { id: existing.id } });
     });
 };
 
@@ -215,13 +291,23 @@ const deleteBarber = async (barberId, barbershopId) => {
  */
 const updateBarberSchedule = async (barberId, barbershopId, schedules) => {
     return await prisma.$transaction(async (tx) => {
+        const existing = await tx.barber.findFirst({
+            where: { id: barberId, barbershopId, deletedAt: null },
+            select: { id: true }
+        });
+        if (!existing) {
+            const err = new Error('Barber not found in this tenant');
+            err.status = 404;
+            throw err;
+        }
+
         // Delete old
-        await tx.barberSchedule.deleteMany({ where: { barberId } });
+        await tx.barberSchedule.deleteMany({ where: { barberId: existing.id } });
 
         // Create new
         return await tx.barberSchedule.createMany({
             data: schedules.map(s => ({
-                barberId,
+                barberId: existing.id,
                 dayOfWeek: s.dayOfWeek,
                 startTime: s.startTime,
                 endTime: s.endTime,

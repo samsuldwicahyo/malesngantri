@@ -25,7 +25,7 @@ const templates = {
         `SEKARANG GILIRAN ANDA! 💈🔥\n\nHalo ${data.customerName}, Barber *${data.barberName}* sudah siap melayani Anda di *${data.barbershopName}*.\n` +
         `Segera masuk ke area barbershop ya!`,
 
-    COMPLETED: (data) =>
+    DONE: (data) =>
         `Terima Kasih! 💈✨\n\nHalo ${data.customerName}, layanan Anda dengan *${data.barberName}* telah selesai.\n\n` +
         `Punya waktu sebentar? Berikan rating & ulasan Anda di sini: ${data.reviewUrl}\n` +
         `Sampai jumpa di kunjungan berikutnya!`,

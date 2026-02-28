@@ -10,12 +10,21 @@ const socialLinksSchema = Joi.object({
 
 const updateBarbershopSchema = Joi.object({
     name: Joi.string().trim().min(2).max(100),
+    city: Joi.string().trim().max(120).allow('', null),
     address: Joi.string().trim().max(250).allow('', null),
     logoUrl: Joi.string().uri().allow('', null),
+    logoImageUrl: Joi.string().uri().allow('', null),
+    coverImageUrl: Joi.string().uri().allow('', null),
+    mapsUrl: Joi.string().trim().allow('', null),
+    whatsapp: Joi.string().trim().allow('', null),
+    operationalHours: Joi.string().trim().allow('', null),
     description: Joi.string().trim().max(2000).allow('', null),
     openingTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).allow('', null),
     closingTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).allow('', null),
     timezone: Joi.string().trim().allow('', null),
+    instagram: Joi.string().trim().allow('', null),
+    tiktok: Joi.string().trim().allow('', null),
+    facebook: Joi.string().trim().allow('', null),
     socialLinks: socialLinksSchema
 }).min(1);
 

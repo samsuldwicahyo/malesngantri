@@ -8,6 +8,7 @@ const defaultHours = {
 
 const buildBarbershopView = async (shop) => {
     const settings = typeof shop.settings === 'object' && shop.settings ? shop.settings : {};
+    const socialLinks = typeof settings.socialLinks === 'object' && settings.socialLinks ? settings.socialLinks : {};
     const [reviewAgg, activeQueues, adminUser] = await Promise.all([
         prisma.review.aggregate({
             where: { barbershopId: shop.id },
@@ -17,7 +18,7 @@ const buildBarbershopView = async (shop) => {
         prisma.queue.count({
             where: {
                 barbershopId: shop.id,
-                status: { in: ['WAITING', 'CALLED', 'IN_PROGRESS'] }
+                status: { in: ['BOOKED', 'CHECKED_IN', 'IN_SERVICE'] }
             }
         }),
         prisma.user.findFirst({
@@ -28,25 +29,42 @@ const buildBarbershopView = async (shop) => {
 
     const averageRating = reviewAgg?._avg?.rating || 0;
     const totalReviews = reviewAgg?._count?.rating || 0;
+    const openingTime = settings.openingTime || defaultHours.openingTime;
+    const closingTime = settings.closingTime || defaultHours.closingTime;
+    const operationalHours = settings.operationalHours || `${openingTime} - ${closingTime}`;
+    const logoImageUrl = settings.logoImageUrl || shop.logoUrl || null;
+    const whatsapp = settings.whatsapp || socialLinks.whatsapp || adminUser?.phoneNumber || null;
 
     return {
         id: shop.id,
         name: shop.name,
         slug: shop.slug,
+        city: settings.city || null,
         address: shop.address,
-        logoUrl: shop.logoUrl,
-        photoUrl: shop.logoUrl,
+        logoUrl: shop.logoUrl || logoImageUrl,
+        logoImageUrl,
+        coverImageUrl: settings.coverImageUrl || null,
+        photoUrl: logoImageUrl,
+        mapsUrl: settings.mapsUrl || null,
         timezone: shop.timezone,
         subscriptionStatus: shop.subscriptionStatus,
         isOpen: true,
-        openingTime: settings.openingTime || defaultHours.openingTime,
-        closingTime: settings.closingTime || defaultHours.closingTime,
+        openingTime,
+        closingTime,
+        operationalHours,
         averageRating,
         totalReviews,
         activeQueues,
-        phoneNumber: adminUser?.phoneNumber || null,
+        whatsapp,
+        phoneNumber: whatsapp,
         description: settings.description || null,
-        socialLinks: settings.socialLinks || {},
+        instagram: settings.instagram || socialLinks.instagram || null,
+        tiktok: settings.tiktok || socialLinks.tiktok || null,
+        facebook: settings.facebook || socialLinks.facebook || null,
+        socialLinks: {
+            ...socialLinks,
+            ...(whatsapp ? { whatsapp } : {})
+        },
         latitude: null,
         longitude: null,
         createdAt: shop.createdAt,
@@ -132,7 +150,7 @@ const listPublicBarbers = async (req, res, next) => {
             const activeQueues = await prisma.queue.count({
                 where: {
                     barberId: barber.id,
-                    status: { in: ['WAITING', 'CALLED', 'IN_PROGRESS'] }
+                    status: { in: ['BOOKED', 'CHECKED_IN', 'IN_SERVICE'] }
                 }
             });
             return {
@@ -254,6 +272,7 @@ const updateBarbershop = async (req, res, next) => {
         }
 
         const settings = typeof shop.settings === 'object' && shop.settings ? { ...shop.settings } : {};
+        const hasValue = (key) => Object.prototype.hasOwnProperty.call(value, key);
 
         const applySetting = (key, val) => {
             if (val === undefined) return;
@@ -275,16 +294,62 @@ const updateBarbershop = async (req, res, next) => {
             return Object.keys(cleaned).length ? cleaned : null;
         };
 
+        const parseOperationalHours = (input) => {
+            if (typeof input !== 'string') return null;
+            const match = input
+                .trim()
+                .match(/^([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)$/);
+            if (!match) return null;
+            return {
+                openingTime: `${match[1]}:${match[2]}`,
+                closingTime: `${match[3]}:${match[4]}`
+            };
+        };
+
+        const derivedHours = hasValue('operationalHours')
+            ? parseOperationalHours(value.operationalHours)
+            : null;
+
         applySetting('description', value.description);
-        applySetting('openingTime', value.openingTime);
-        applySetting('closingTime', value.closingTime);
-        applySetting('socialLinks', cleanSocialLinks(value.socialLinks));
+        applySetting('city', value.city);
+        applySetting('whatsapp', value.whatsapp);
+        applySetting('operationalHours', value.operationalHours);
+        applySetting('coverImageUrl', value.coverImageUrl);
+        applySetting('logoImageUrl', value.logoImageUrl);
+        applySetting('mapsUrl', value.mapsUrl);
+        applySetting('instagram', value.instagram);
+        applySetting('tiktok', value.tiktok);
+        applySetting('facebook', value.facebook);
+        applySetting('openingTime', hasValue('openingTime') ? value.openingTime : derivedHours?.openingTime);
+        applySetting('closingTime', hasValue('closingTime') ? value.closingTime : derivedHours?.closingTime);
+
+        const hasSocialPatch =
+            hasValue('socialLinks') ||
+            hasValue('instagram') ||
+            hasValue('tiktok') ||
+            hasValue('facebook') ||
+            hasValue('whatsapp');
+
+        if (hasSocialPatch) {
+            const baseSocials = typeof settings.socialLinks === 'object' && settings.socialLinks ? settings.socialLinks : {};
+            const mergedSocials = {
+                ...baseSocials,
+                ...(value.socialLinks || {}),
+                ...(hasValue('instagram') ? { instagram: value.instagram } : {}),
+                ...(hasValue('tiktok') ? { tiktok: value.tiktok } : {}),
+                ...(hasValue('facebook') ? { facebook: value.facebook } : {}),
+                ...(hasValue('whatsapp') ? { whatsapp: value.whatsapp } : {})
+            };
+
+            applySetting('socialLinks', cleanSocialLinks(mergedSocials));
+        }
 
         const data = {};
-        if (Object.prototype.hasOwnProperty.call(value, 'name')) data.name = value.name;
-        if (Object.prototype.hasOwnProperty.call(value, 'address')) data.address = value.address;
-        if (Object.prototype.hasOwnProperty.call(value, 'logoUrl')) data.logoUrl = value.logoUrl;
-        if (Object.prototype.hasOwnProperty.call(value, 'timezone')) data.timezone = value.timezone;
+        if (hasValue('name')) data.name = value.name;
+        if (hasValue('address')) data.address = value.address;
+        if (hasValue('logoUrl')) data.logoUrl = value.logoUrl || null;
+        if (!hasValue('logoUrl') && hasValue('logoImageUrl')) data.logoUrl = value.logoImageUrl || null;
+        if (hasValue('timezone')) data.timezone = value.timezone;
         data.settings = settings;
 
         const updated = await prisma.barbershop.update({

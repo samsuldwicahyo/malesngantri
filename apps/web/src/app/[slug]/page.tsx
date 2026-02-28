@@ -1,29 +1,74 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useParams } from 'next/navigation';
-import {
-  addQueueTicket,
-  countQueueAhead,
-  isActiveQueueStatus,
-  loadTenantState,
-  persistTenantState,
-  updateQueueStatus,
-} from '@/features/tenant/store';
-import {
-  QUEUE_STATUS_BADGE,
-  QUEUE_STATUS_HELP,
-  QUEUE_STATUS_LABEL,
-  type QueueTicket,
-  type TenantState,
-} from '@/features/tenant/types';
+import { io, type Socket } from 'socket.io-client';
+import { CalendarDays, CheckCircle2, Clock3, MapPin, PhoneCall, XCircle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardDescription, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Loader } from '@/components/ui/loader';
+import { Textarea } from '@/components/ui/textarea';
+import { Toast } from '@/components/ui/toast';
 
-type QueueMessage = {
-  type: 'SYNC_STATE';
-  payload: TenantState;
+type Barbershop = {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  address?: string | null;
+  city?: string | null;
+  activeQueues?: number;
+  operationalHours?: string | null;
+  coverImageUrl?: string | null;
+  logoImageUrl?: string | null;
+  mapsUrl?: string | null;
+  whatsapp?: string | null;
+  instagram?: string | null;
 };
 
+type Service = {
+  id: string;
+  name: string;
+  price: number;
+  duration: number;
+  description?: string | null;
+};
+
+type Barber = {
+  id: string;
+  name: string;
+  status: string;
+  activeQueues: number;
+  photoUrl?: string | null;
+  bio?: string | null;
+  specializations?: string[] | null;
+  socialLinks?: { instagram?: string };
+  services: Service[];
+};
+
+type QueueStatus = {
+  id: string;
+  status: string;
+  queueNumber: string;
+  scheduledDate?: string;
+  scheduledTime?: string | null;
+  cancelToken?: string;
+  customerName?: string;
+  customerPhone?: string;
+  barber?: { id: string; name: string };
+  service?: { id: string; name: string; duration: number };
+};
+
+type QueuePayload = {
+  queue: QueueStatus;
+};
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api/v1';
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
 const SLOT_OPTIONS = [
   '09:00',
   '09:30',
@@ -31,6 +76,8 @@ const SLOT_OPTIONS = [
   '10:30',
   '11:00',
   '11:30',
+  '12:00',
+  '12:30',
   '13:00',
   '13:30',
   '14:00',
@@ -47,455 +94,591 @@ const SLOT_OPTIONS = [
   '19:30',
 ] as const;
 
-const channelName = (slug: string): string => `malas-ngantri-tenant-${slug}`;
+const toRupiah = (value: number): string =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
 
-export default function TenantCustomerPage() {
-  const params = useParams<{ slug: string }>();
-  const slug = params?.slug;
+const normalizePhone = (value: string): string => value.replace(/[^\d+]/g, '');
 
-  const [tenantState, setTenantState] = useState<TenantState | null>(() => {
-    if (!slug) {
-      return null;
-    }
-    return loadTenantState(slug);
-  });
-  const [customerName, setCustomerName] = useState('');
-  const [customerWhatsapp, setCustomerWhatsapp] = useState('');
-  const [barberId, setBarberId] = useState('');
-  const [serviceId, setServiceId] = useState('');
+export default function TenantLandingPage() {
+  const params = useParams();
+  const slug = String(params?.slug || '');
+  const socketRef = useRef<Socket | null>(null);
+
+  const [shop, setShop] = useState<Barbershop | null>(null);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [slotError, setSlotError] = useState('');
+
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [selectedBarberId, setSelectedBarberId] = useState('');
   const [bookingDate, setBookingDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [slotTime, setSlotTime] = useState<(typeof SLOT_OPTIONS)[number]>('10:00');
-  const [error, setError] = useState('');
-  const channelRef = useRef<BroadcastChannel | null>(null);
+  const [takenSlots, setTakenSlots] = useState<Set<string>>(new Set());
+  const [isBooking, setIsBooking] = useState(false);
+  const [queueData, setQueueData] = useState<QueuePayload | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState('Batal booking');
 
-  const broadcast = (state: TenantState) => {
-    if (!channelRef.current) {
-      return;
+  const storageKey = slug ? `booking:${slug}` : null;
+  const normalizedPhone = normalizePhone(phone);
+
+  const servicesCatalog = useMemo(() => {
+    const serviceMap = new Map<string, Service>();
+    for (const barber of barbers) {
+      for (const service of barber.services || []) {
+        serviceMap.set(service.id, service);
+      }
     }
+    return Array.from(serviceMap.values());
+  }, [barbers]);
 
-    const message: QueueMessage = {
-      type: 'SYNC_STATE',
-      payload: state,
-    };
+  const filteredWorkers = useMemo(() => {
+    if (!selectedServiceId) return barbers;
+    return barbers.filter((worker) => worker.services.some((service) => service.id === selectedServiceId));
+  }, [barbers, selectedServiceId]);
 
-    channelRef.current.postMessage(message);
-  };
+  const selectedService = useMemo(
+    () => servicesCatalog.find((service) => service.id === selectedServiceId) || null,
+    [servicesCatalog, selectedServiceId],
+  );
+  const selectedWorker = useMemo(
+    () => barbers.find((worker) => worker.id === selectedBarberId) || null,
+    [barbers, selectedBarberId],
+  );
+
+  const bookingDateLabel = useMemo(() => {
+    if (!bookingDate) return '-';
+    const date = new Date(bookingDate);
+    return new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+  }, [bookingDate]);
 
   useEffect(() => {
-    if (!slug) {
-      return;
-    }
+    if (!slug) return;
 
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      const channel = new BroadcastChannel(channelName(slug));
-      channelRef.current = channel;
-      channel.onmessage = (event: MessageEvent<QueueMessage>) => {
-        if (event.data?.type === 'SYNC_STATE') {
-          setTenantState(event.data.payload);
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        const shopResponse = await fetch(`${API_BASE_URL}/barbershops/slug/${slug}`);
+        const shopPayload = await shopResponse.json().catch(() => ({}));
+        if (!shopResponse.ok || shopPayload?.success === false) {
+          throw new Error(shopPayload?.error?.message || 'Tenant tidak ditemukan.');
         }
-      };
 
-      return () => {
-        channel.close();
-        channelRef.current = null;
-      };
-    }
+        const tenant = shopPayload.data as Barbershop;
+        setShop(tenant);
 
-    return;
+        const workersResponse = await fetch(`${API_BASE_URL}/barbershops/${tenant.id}/barbers`);
+        const workersPayload = await workersResponse.json().catch(() => ({}));
+        if (!workersResponse.ok || workersPayload?.success === false) {
+          throw new Error(workersPayload?.error?.message || 'Gagal memuat worker.');
+        }
+        setBarbers((workersPayload.data || []) as Barber[]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Gagal memuat tenant.';
+        setError(message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
   }, [slug]);
 
-  const bookings = useMemo(() => tenantState?.queues ?? [], [tenantState]);
+  useEffect(() => {
+    if (!selectedServiceId) return;
+    if (selectedBarberId && filteredWorkers.some((worker) => worker.id === selectedBarberId)) return;
+    setSelectedBarberId(filteredWorkers[0]?.id || '');
+  }, [filteredWorkers, selectedBarberId, selectedServiceId]);
 
-  const activeBookings = useMemo(() => {
-    return bookings
-      .filter((item) => isActiveQueueStatus(item.status))
-      .sort((a, b) => `${a.bookingDate} ${a.slotTime}`.localeCompare(`${b.bookingDate} ${b.slotTime}`));
-  }, [bookings]);
+  const fetchQueueStatus = useCallback(async (queueId: string, phoneValue: string, token?: string) => {
+    try {
+      const query = token ? `token=${encodeURIComponent(token)}` : `phone=${encodeURIComponent(phoneValue)}`;
+      const response = await fetch(`${API_BASE_URL}/queues/public/${queueId}?${query}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success === false) {
+        if (response.status === 404 && storageKey) localStorage.removeItem(storageKey);
+        setQueueData(null);
+        return;
+      }
+      setQueueData(payload?.data || null);
+    } catch {
+      // ignore polling error
+    }
+  }, [storageKey]);
 
-  const monitoredBooking = useMemo<QueueTicket | null>(() => {
-    const sanitized = customerWhatsapp.replace(/\D/g, '');
-    if (!sanitized) {
-      return null;
+  useEffect(() => {
+    if (!storageKey) return;
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw) as { queueId: string; phone: string; cancelToken?: string };
+      if (!parsed.queueId) return;
+      setPhone(parsed.phone || '');
+      void fetchQueueStatus(parsed.queueId, parsed.phone || '', parsed.cancelToken);
+    } catch {
+      localStorage.removeItem(storageKey);
+    }
+  }, [fetchQueueStatus, storageKey]);
+
+  useEffect(() => {
+    if (!queueData?.queue?.id) return;
+    const interval = window.setInterval(() => {
+      void fetchQueueStatus(queueData.queue.id, normalizedPhone, queueData.queue.cancelToken);
+    }, 20000);
+    return () => window.clearInterval(interval);
+  }, [fetchQueueStatus, queueData?.queue?.id, queueData?.queue?.cancelToken, normalizedPhone]);
+
+  useEffect(() => {
+    if (!queueData?.queue?.id || !normalizedPhone) return;
+    if (!socketRef.current) {
+      socketRef.current = io(SOCKET_URL, { transports: ['websocket'] });
     }
 
-    const matches = bookings
-      .filter((item) => item.customerWhatsapp.replace(/\D/g, '') === sanitized)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const socket = socketRef.current;
+    socket.emit('join-room', `queue:${queueData.queue.id}`);
 
-    return matches[0] ?? null;
-  }, [customerWhatsapp, bookings]);
+    const refresh = () => {
+      void fetchQueueStatus(queueData.queue.id, normalizedPhone, queueData.queue.cancelToken);
+    };
 
-  const bookingAhead = useMemo(() => {
-    if (!monitoredBooking) {
-      return null;
-    }
+    socket.on('queue:updated', refresh);
+    socket.on('queue:status_changed', refresh);
+    socket.on('queue:cancelled', refresh);
 
-    return countQueueAhead(activeBookings, monitoredBooking.id);
-  }, [activeBookings, monitoredBooking]);
+    return () => {
+      socket.off('queue:updated', refresh);
+      socket.off('queue:status_changed', refresh);
+      socket.off('queue:cancelled', refresh);
+    };
+  }, [fetchQueueStatus, queueData?.queue?.id, queueData?.queue?.cancelToken, normalizedPhone]);
 
-  const estimatedDurationAhead = useMemo(() => {
-    if (!tenantState || !monitoredBooking) {
-      return null;
-    }
+  useEffect(() => {
+    return () => {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
 
-    if (!isActiveQueueStatus(monitoredBooking.status)) {
-      return 0;
-    }
-
-    const filtered = activeBookings.filter(
-      (item) =>
-        item.id !== monitoredBooking.id &&
-        item.barberId === monitoredBooking.barberId &&
-        item.bookingDate === monitoredBooking.bookingDate &&
-        item.slotTime <= monitoredBooking.slotTime,
-    );
-
-    return filtered.reduce((total, item) => {
-      const service = tenantState.services.find((svc) => svc.id === item.serviceId);
-      return total + (service?.durationMinutes ?? 0);
-    }, 0);
-  }, [activeBookings, monitoredBooking, tenantState]);
-
-  const joinBooking = (event: FormEvent<HTMLFormElement>) => {
+  const handleBooking = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!tenantState || !slug) {
+    setError('');
+    setSlotError('');
+
+    if (!shop) {
+      setError('Tenant tidak ditemukan.');
       return;
     }
-
-    const cleanWhatsapp = customerWhatsapp.replace(/\D/g, '');
-    if (!customerName.trim()) {
+    if (!name.trim()) {
       setError('Nama wajib diisi.');
       return;
     }
-    if (cleanWhatsapp.length < 10) {
+    if (!normalizedPhone || normalizedPhone.length < 10) {
       setError('Nomor WhatsApp tidak valid.');
       return;
     }
-    if (!barberId || !serviceId) {
-      setError('Pilih worker/pemangkas rambut dan layanan.');
+    if (!selectedServiceId) {
+      setError('Pilih layanan terlebih dahulu.');
+      return;
+    }
+    if (!selectedBarberId) {
+      setError('Pilih worker terlebih dahulu.');
       return;
     }
 
-    const next = addQueueTicket(tenantState, {
-      customerName: customerName.trim(),
-      customerWhatsapp: cleanWhatsapp,
-      barberId,
-      serviceId,
-      bookingDate,
-      slotTime,
-      source: 'ONLINE',
-    });
+    setIsBooking(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/queues/public`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          barbershopId: shop.id,
+          barberId: selectedBarberId,
+          serviceId: selectedServiceId,
+          customerName: name.trim(),
+          customerPhone: normalizedPhone,
+          scheduledDate: bookingDate,
+          scheduledTime: slotTime,
+          bookingType: 'ONLINE',
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success === false) {
+        const message = payload?.error?.message || payload?.message || 'Booking gagal.';
+        if (response.status === 409) {
+          setTakenSlots((prev) => new Set(prev).add(slotTime));
+          setSlotError(`Slot ${slotTime} sudah penuh atau bentrok. Pilih slot lain.`);
+        }
+        throw new Error(message);
+      }
 
-    setError('');
-    setTenantState(next);
-    persistTenantState(slug, next);
-    broadcast(next);
+      const queueId = payload?.data?.id;
+      const cancelToken = payload?.data?.cancelToken;
+      if (queueId && storageKey) {
+        localStorage.setItem(storageKey, JSON.stringify({ queueId, phone: normalizedPhone, cancelToken }));
+      }
+      await fetchQueueStatus(queueId, normalizedPhone, cancelToken);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Booking gagal.';
+      setError(message);
+    } finally {
+      setIsBooking(false);
+    }
   };
 
-  const cancelBooking = () => {
-    if (!tenantState || !monitoredBooking || !slug) {
-      return;
+  const handleCancelBooking = async () => {
+    if (!queueData?.queue?.id) return;
+    setIsCancelling(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/queues/public/${queueData.queue.id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cancelToken: queueData.queue.cancelToken,
+          cancelReason: cancelReason || 'Batal booking',
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error?.message || payload?.message || 'Gagal membatalkan booking.');
+      }
+      if (storageKey) localStorage.removeItem(storageKey);
+      setQueueData(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal membatalkan booking.');
+    } finally {
+      setIsCancelling(false);
     }
-
-    if (!['BOOKED', 'CHECKED_IN'].includes(monitoredBooking.status)) {
-      return;
-    }
-
-    const next = updateQueueStatus(tenantState, monitoredBooking.id, 'CANCELED');
-    setTenantState(next);
-    persistTenantState(slug, next);
-    broadcast(next);
   };
 
-  if (!slug || !tenantState) {
-    return <main className="min-h-screen bg-neutral-950" />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <Loader label="Memuat halaman tenant..." />
+      </div>
+    );
   }
 
-  if (tenantState.tenant.subscriptionStatus !== 'ACTIVE') {
+  if (error && !shop) {
     return (
-      <main className="min-h-screen bg-neutral-950 px-6 py-20 text-neutral-100">
-        <div className="mx-auto max-w-3xl rounded-3xl border border-red-500/30 bg-red-500/10 p-8">
-          <h1 className="text-3xl font-black">Tenant Tidak Aktif</h1>
-          <p className="mt-3 text-sm text-red-100/90">
-            Langganan tenant tidak aktif, booking online sementara dinonaktifkan.
-          </p>
-          <Link href="/" className="mt-6 inline-flex rounded-xl bg-white px-4 py-2 text-sm font-bold text-neutral-900">
-            Kembali ke Landing Page
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <Card className="max-w-md text-center">
+          <CardTitle>Tenant tidak ditemukan</CardTitle>
+          <CardDescription className="mt-2">{error}</CardDescription>
+          <Link href="/" className="mt-5 inline-block">
+            <Button variant="primary">Kembali ke Root</Button>
           </Link>
+        </Card>
+      </div>
+    );
+  }
+
+  if (queueData) {
+    return (
+      <main className="min-h-screen px-4 py-10 sm:px-6">
+        <div className="mx-auto w-full max-w-2xl space-y-6">
+          <Card className="text-center">
+            <div className="mx-auto mb-3 inline-flex h-16 w-16 items-center justify-center rounded-full border border-emerald-300/35 bg-emerald-500/15">
+              <CheckCircle2 size={30} className="text-emerald-300" />
+            </div>
+            <Badge variant="success">BOOKED</Badge>
+            <h1 className="mt-3 text-3xl font-black">Booking Berhasil</h1>
+            <p className="mt-2 text-sm text-neutral-300">
+              Detail booking Anda tersimpan. Tim barber akan melayani sesuai slot yang dipilih.
+            </p>
+          </Card>
+
+          <Card className="space-y-2">
+            <CardTitle>Detail Booking</CardTitle>
+            <div className="grid gap-2 text-sm text-neutral-200">
+              <p>Nama: {queueData.queue.customerName || name || '-'}</p>
+              <p>WhatsApp: {queueData.queue.customerPhone || normalizedPhone || '-'}</p>
+              <p>Layanan: {queueData.queue.service?.name || '-'}</p>
+              <p>Worker: {queueData.queue.barber?.name || '-'}</p>
+              <p>Tanggal: {queueData.queue.scheduledDate ? queueData.queue.scheduledDate.slice(0, 10) : '-'}</p>
+              <p>Jam: {queueData.queue.scheduledTime || '-'}</p>
+            </div>
+          </Card>
+
+          {queueData.queue.cancelToken ? (
+            <Card className="space-y-3">
+              <CardTitle>Batalkan Booking</CardTitle>
+              <Textarea
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                placeholder="Alasan pembatalan"
+              />
+              <Button variant="danger" className="w-full" loading={isCancelling} onClick={handleCancelBooking}>
+                <XCircle size={14} />
+                Batalkan Booking
+              </Button>
+            </Card>
+          ) : null}
+
+          <div className="text-center">
+            <Link href={`/${slug}/admin`}>
+              <Button variant="secondary">Login Admin</Button>
+            </Link>
+          </div>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_10%_20%,rgba(248,113,113,0.2),transparent_30%),radial-gradient(circle_at_90%_0%,rgba(59,130,246,0.2),transparent_35%),#05060a] px-4 py-8 text-neutral-100 sm:px-6 sm:py-10">
-      <div className="mx-auto max-w-6xl space-y-8">
-        <header className="rounded-3xl border border-white/10 bg-black/40 p-4 backdrop-blur sm:p-6">
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200/90">/t/{tenantState.tenant.slug}</p>
-          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <main className="min-h-screen text-neutral-100">
+      <nav className="sticky top-0 z-40 border-b border-white/10 bg-black/75 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 font-black text-neutral-950">
+              {(shop?.name?.[0] || 'B').toUpperCase()}
+            </div>
             <div>
-              <h1 className="text-3xl font-black leading-tight sm:text-4xl">{tenantState.tenant.name}</h1>
-              <p className="mt-2 text-sm text-neutral-300">
-                {tenantState.tenant.address} • {tenantState.tenant.operationalHours}
-              </p>
-            </div>
-            <div className="flex w-full flex-wrap gap-3 sm:w-auto">
-              <Link
-                href={`/t/${slug}/admin`}
-                className="w-full rounded-2xl border border-white/20 px-4 py-2 text-center text-xs font-bold uppercase tracking-widest hover:bg-white/10 sm:w-auto"
-              >
-                Masuk Admin
-              </Link>
-              <a
-                href={`https://wa.me/${tenantState.tenant.whatsapp}`}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full rounded-2xl bg-emerald-500 px-4 py-2 text-center text-xs font-black uppercase tracking-widest text-emerald-950 sm:w-auto"
-              >
-                Kontak WhatsApp
-              </a>
+              <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">Tenant Public</p>
+              <h1 className="text-sm font-black">{shop?.name || slug}</h1>
             </div>
           </div>
-        </header>
+          <Link href={`/${slug}/admin`} className="text-xs font-bold uppercase tracking-wider text-neutral-300 hover:text-white">
+            Login Admin
+          </Link>
+        </div>
+      </nav>
 
-        <section className="grid gap-6 lg:grid-cols-2">
-          <form onSubmit={joinBooking} className="rounded-3xl border border-white/10 bg-black/45 p-4 backdrop-blur sm:p-6">
-            <h2 className="text-xl font-black">Booking Online (Pilih Jam)</h2>
-            <p className="mt-2 text-sm text-neutral-400">
-              Isi data singkat, lalu pilih pemangkas, layanan, tanggal, dan jam kedatangan.
-            </p>
-
-            <div className="mt-6 grid gap-4">
-              <label className="grid gap-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Nama</span>
-                <input
-                  value={customerName}
-                  onChange={(event) => setCustomerName(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
-                  placeholder="Nama customer"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">WhatsApp</span>
-                <input
-                  value={customerWhatsapp}
-                  onChange={(event) => setCustomerWhatsapp(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
-                  placeholder="62812xxxx"
-                />
-              </label>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="grid gap-2">
-                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Tanggal</span>
-                  <input
-                    type="date"
-                    value={bookingDate}
-                    onChange={(event) => setBookingDate(event.target.value)}
-                    className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
-                  />
-                </label>
-
-                <label className="grid gap-2">
-                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Slot Waktu</span>
-                  <select
-                    value={slotTime}
-                    onChange={(event) => setSlotTime(event.target.value as (typeof SLOT_OPTIONS)[number])}
-                    className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
-                  >
-                    {SLOT_OPTIONS.map((slot) => (
-                      <option key={slot} value={slot}>
-                        {slot}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+      <section className="relative">
+        <div
+          className="h-[300px] w-full bg-cover bg-center"
+          style={{
+            backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,.35), rgba(10,10,10,.95)), url(${shop?.coverImageUrl || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=1800&q=80'})`,
+          }}
+        />
+        <div className="mx-auto -mt-22 w-full max-w-6xl px-4 pb-6 sm:px-6">
+          <Card className="grid gap-5 lg:grid-cols-[auto_1fr]">
+            <Image
+              src={shop?.logoImageUrl || 'https://images.unsplash.com/photo-1532710093739-9470acff878f?auto=format&fit=crop&w=220&q=80'}
+              alt={shop?.name || slug}
+              width={96}
+              height={96}
+              className="h-24 w-24 rounded-2xl object-cover ring-2 ring-amber-400/40"
+            />
+            <div className="space-y-3">
+              <Badge variant="info">Branding Tenant</Badge>
+              <h2 className="text-3xl font-black">{shop?.name || slug}</h2>
+              <p className="text-sm text-neutral-300">{shop?.description || 'Barber modern dengan booking online tanpa antre ribet.'}</p>
+              <div className="grid gap-2 text-sm text-neutral-200 sm:grid-cols-2">
+                <p className="inline-flex items-center gap-2"><Clock3 size={14} /> {shop?.operationalHours || '09:00 - 19:30'}</p>
+                <p className="inline-flex items-center gap-2"><MapPin size={14} /> {shop?.address || '-'}</p>
               </div>
-
-              <label className="grid gap-2">
-                  <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Pilih Pemangkas</span>
-                <select
-                  value={barberId}
-                  onChange={(event) => setBarberId(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
-                >
-                  <option value="">Pilih pemangkas...</option>
-                  {tenantState.barbers.map((barber) => (
-                    <option key={barber.id} value={barber.id}>
-                      {barber.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-xs font-bold uppercase tracking-widest text-neutral-400">Pilih Layanan</span>
-                <select
-                  value={serviceId}
-                  onChange={(event) => setServiceId(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-neutral-900 px-4 py-3 text-sm outline-none focus:border-rose-400"
-                >
-                  <option value="">Pilih layanan...</option>
-                  {tenantState.services.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name} ({service.durationMinutes} menit)
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="flex flex-wrap gap-2">
+                {shop?.whatsapp ? (
+                  <a href={`https://wa.me/${normalizePhone(shop.whatsapp)}`} target="_blank" rel="noreferrer">
+                    <Button variant="primary"><PhoneCall size={14} /> WhatsApp</Button>
+                  </a>
+                ) : null}
+                {shop?.instagram ? (
+                  <a href={`https://instagram.com/${shop.instagram.replace('@', '')}`} target="_blank" rel="noreferrer">
+                    <Button variant="secondary">Instagram</Button>
+                  </a>
+                ) : null}
+              </div>
             </div>
+          </Card>
+        </div>
+      </section>
 
-            {error ? <p className="mt-3 text-sm font-semibold text-rose-300">{error}</p> : null}
+      <section className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+        <Card>
+          <CardTitle>Lokasi</CardTitle>
+          <CardDescription className="mt-1">Akses lokasi barber melalui Google Maps.</CardDescription>
+          {shop?.mapsUrl ? (
+            <iframe
+              title="maps"
+              src={shop.mapsUrl}
+              className="mt-4 h-72 w-full rounded-2xl border border-white/10"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          ) : (
+            <p className="mt-4 text-sm text-neutral-400">Link Google Maps belum tersedia.</p>
+          )}
+        </Card>
+      </section>
 
-            <button
-              type="submit"
-              className="mt-6 w-full rounded-xl bg-rose-400 px-4 py-3 text-sm font-black uppercase tracking-widest text-rose-950 hover:bg-rose-300"
-            >
-              Booking Sekarang
-            </button>
-            <p className="mt-2 text-xs text-neutral-500">Nomor WhatsApp hanya terlihat di panel admin tenant.</p>
-          </form>
+      <section className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-2xl font-black">Layanan</h3>
+          <Badge variant="muted">{servicesCatalog.length} layanan</Badge>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {servicesCatalog.map((service) => (
+            <Card key={service.id} className={selectedServiceId === service.id ? 'border-amber-300/40' : ''}>
+              <CardTitle>{service.name}</CardTitle>
+              <CardDescription className="mt-2">{service.description || 'Layanan profesional untuk grooming modern.'}</CardDescription>
+              <div className="mt-4 flex items-center justify-between text-sm">
+                <p className="font-black text-amber-300">{toRupiah(service.price)}</p>
+                <p className="text-neutral-400">{service.duration} menit</p>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </section>
 
-          <div className="rounded-3xl border border-white/10 bg-black/45 p-4 backdrop-blur sm:p-6">
-            <h2 className="text-xl font-black">Pantau Status Booking</h2>
-            {monitoredBooking ? (
-              <div className="mt-5 space-y-4">
-                <div className="rounded-2xl border border-white/10 bg-neutral-900 p-4">
-                  <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Kode Booking</p>
-                  <p className="mt-1 text-4xl font-black text-rose-300">{monitoredBooking.bookingCode}</p>
-                  <p className="mt-1 text-sm text-neutral-300">
-                    Slot: {monitoredBooking.bookingDate} • {monitoredBooking.slotTime}
-                  </p>
-                  <p className="mt-1 text-sm text-neutral-300">
-                    Status:{' '}
-                    <span
-                      className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${QUEUE_STATUS_BADGE[monitoredBooking.status]}`}
-                    >
-                      {QUEUE_STATUS_LABEL[monitoredBooking.status]}
-                    </span>
-                  </p>
+      <section className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-2xl font-black">Worker</h3>
+          <Badge variant="muted">{barbers.length} worker</Badge>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {barbers.map((worker) => (
+            <Card key={worker.id}>
+              <div className="flex items-center gap-3">
+                <Image
+                  src={worker.photoUrl || 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=300&q=80'}
+                  alt={worker.name}
+                  width={64}
+                  height={64}
+                  className="h-16 w-16 rounded-xl object-cover"
+                />
+                <div>
+                  <CardTitle className="text-base">{worker.name}</CardTitle>
+                  <CardDescription>{worker.specializations?.join(', ') || 'Haircut & grooming'}</CardDescription>
                 </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-neutral-900 p-4">
-                    <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Booking di Depan</p>
-                    <p className="mt-1 text-2xl font-black">{bookingAhead ?? 0}</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-neutral-900 p-4">
-                    <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Estimasi Durasi Tunggu</p>
-                    <p className="mt-1 text-2xl font-black">{estimatedDurationAhead ?? 0} menit</p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={cancelBooking}
-                  disabled={!['BOOKED', 'CHECKED_IN'].includes(monitoredBooking.status)}
-                  className="w-full rounded-xl border border-rose-400/50 bg-rose-500/10 px-4 py-3 text-sm font-bold uppercase tracking-widest text-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+              </div>
+              {worker.socialLinks?.instagram ? (
+                <a
+                  href={`https://instagram.com/${worker.socialLinks.instagram.replace('@', '')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-block text-xs font-bold uppercase tracking-wider text-amber-300 hover:text-amber-200"
                 >
-                  Batalkan Booking
-                </button>
-              </div>
-            ) : (
-              <div className="mt-5 rounded-2xl border border-dashed border-white/20 bg-neutral-950/60 p-4 text-sm text-neutral-400 sm:p-6">
-                Isi nomor WhatsApp yang dipakai saat booking untuk melihat status terbaru.
-              </div>
-            )}
+                  @{worker.socialLinks.instagram.replace('@', '')}
+                </a>
+              ) : null}
+            </Card>
+          ))}
+        </div>
+      </section>
 
-            <div className="mt-4 rounded-2xl border border-white/10 bg-neutral-950/70 p-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Arti Status</p>
-              <div className="mt-2 space-y-1 text-xs text-neutral-300">
-                {Object.entries(QUEUE_STATUS_HELP).map(([key, value]) => (
-                  <p key={key}>
-                    <span className="font-bold text-neutral-100">{QUEUE_STATUS_LABEL[key as keyof typeof QUEUE_STATUS_HELP]}:</span>{' '}
-                    {value}
-                  </p>
+      <section className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+        <Card className="space-y-4">
+          <div>
+            <h3 className="text-2xl font-black">Booking Online</h3>
+            <p className="mt-1 text-sm text-neutral-400">Pilih layanan, worker, tanggal, dan jam slot yang tersedia.</p>
+          </div>
+
+          <form onSubmit={handleBooking} className="grid gap-4 md:grid-cols-2">
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Nama"
+              autoComplete="name"
+              required
+            />
+            <Input
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="WhatsApp"
+              autoComplete="tel"
+              required
+            />
+
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wider text-neutral-400">
+              Layanan
+              <select
+                value={selectedServiceId}
+                onChange={(event) => setSelectedServiceId(event.target.value)}
+                className="min-h-11 rounded-xl border border-white/15 bg-neutral-950/75 px-4 py-3 text-sm text-neutral-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/25"
+                required
+              >
+                <option value="">Pilih layanan</option>
+                {servicesCatalog.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name} • {toRupiah(service.price)}
+                  </option>
                 ))}
-              </div>
+              </select>
+            </label>
+
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wider text-neutral-400">
+              Worker
+              <select
+                value={selectedBarberId}
+                onChange={(event) => setSelectedBarberId(event.target.value)}
+                className="min-h-11 rounded-xl border border-white/15 bg-neutral-950/75 px-4 py-3 text-sm text-neutral-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/25"
+                required
+              >
+                <option value="">Pilih worker</option>
+                {filteredWorkers.map((worker) => (
+                  <option key={worker.id} value={worker.id}>
+                    {worker.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wider text-neutral-400">
+              Tanggal
+              <Input
+                type="date"
+                min={new Date().toISOString().slice(0, 10)}
+                value={bookingDate}
+                onChange={(event) => setBookingDate(event.target.value)}
+                required
+              />
+            </label>
+
+            <label className="grid gap-1 text-xs font-bold uppercase tracking-wider text-neutral-400">
+              Jam Slot
+              <select
+                value={slotTime}
+                onChange={(event) => setSlotTime(event.target.value as (typeof SLOT_OPTIONS)[number])}
+                className="min-h-11 rounded-xl border border-white/15 bg-neutral-950/75 px-4 py-3 text-sm text-neutral-100 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/25"
+              >
+                {SLOT_OPTIONS.map((slot) => (
+                  <option
+                    key={slot}
+                    value={slot}
+                    disabled={takenSlots.has(slot)}
+                  >
+                    {slot}{takenSlots.has(slot) ? ' (penuh)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="md:col-span-2">
+              <Card className="rounded-2xl p-4">
+                <p className="text-xs uppercase tracking-wider text-neutral-500">Ringkasan</p>
+                <p className="mt-1 text-sm text-neutral-200">
+                  {selectedService?.name || '-'} • {selectedWorker?.name || '-'} • {bookingDateLabel} • {slotTime}
+                </p>
+              </Card>
             </div>
-          </div>
-        </section>
 
-        <section className="rounded-3xl border border-white/10 bg-black/40 p-4 backdrop-blur sm:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-black">Daftar Booking Hari Ini</h2>
-            <p className="text-xs text-neutral-500">Data akan ikut berubah saat admin update status</p>
-          </div>
+            {slotError ? <Toast variant="danger" className="md:col-span-2">{slotError}</Toast> : null}
+            {error ? <Toast variant="danger" className="md:col-span-2">{error}</Toast> : null}
 
-          <div className="mt-4 space-y-3 md:hidden">
-            {activeBookings.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/20 bg-neutral-950/60 p-4 text-sm text-neutral-400">
-                Belum ada booking aktif hari ini.
-              </div>
-            ) : (
-              activeBookings.map((item) => {
-                const service = tenantState.services.find((svc) => svc.id === item.serviceId);
-                const barber = tenantState.barbers.find((row) => row.id === item.barberId);
+            <div className="md:col-span-2">
+              <Button type="submit" variant="primary" size="lg" className="w-full" loading={isBooking}>
+                <CalendarDays size={15} />
+                Booking
+              </Button>
+            </div>
+          </form>
+        </Card>
+      </section>
 
-                return (
-                  <article key={item.id} className="rounded-2xl border border-white/10 bg-neutral-900/60 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-black text-rose-300">{item.bookingCode}</p>
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${QUEUE_STATUS_BADGE[item.status]}`}
-                      >
-                        {QUEUE_STATUS_LABEL[item.status]}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm font-semibold">{item.customerName}</p>
-                    <p className="mt-1 text-xs text-neutral-400">
-                      {item.bookingDate} • {item.slotTime}
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-300">Layanan: {service?.name ?? '-'}</p>
-                    <p className="mt-1 text-xs text-neutral-300">Pemangkas: {barber?.name ?? '-'}</p>
-                  </article>
-                );
-              })
-            )}
-          </div>
-
-          <div className="mt-4 hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[840px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-widest text-neutral-400">
-                <tr>
-                  <th className="py-3">Kode</th>
-                  <th className="py-3">Customer</th>
-                  <th className="py-3">Tanggal</th>
-                  <th className="py-3">Slot</th>
-                  <th className="py-3">Layanan</th>
-                  <th className="py-3">Worker</th>
-                  <th className="py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeBookings.map((item) => {
-                  const service = tenantState.services.find((svc) => svc.id === item.serviceId);
-                  const barber = tenantState.barbers.find((row) => row.id === item.barberId);
-
-                  return (
-                    <tr key={item.id} className="border-t border-white/10">
-                      <td className="py-3 font-black text-rose-300">{item.bookingCode}</td>
-                      <td className="py-3">{item.customerName}</td>
-                      <td className="py-3">{item.bookingDate}</td>
-                      <td className="py-3">{item.slotTime}</td>
-                      <td className="py-3">{service?.name ?? '-'}</td>
-                      <td className="py-3">{barber?.name ?? '-'}</td>
-                      <td className="py-3">
-                        <span
-                          className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${QUEUE_STATUS_BADGE[item.status]}`}
-                        >
-                          {QUEUE_STATUS_LABEL[item.status]}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+      <footer className="mt-8 border-t border-white/10">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-7 text-sm text-neutral-400 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <p>{shop?.name || slug} • Powered by Malas Ngantri</p>
+          <p>© {new Date().getFullYear()}</p>
+        </div>
+      </footer>
     </main>
   );
 }

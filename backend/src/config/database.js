@@ -75,4 +75,25 @@ const prisma = new PrismaClient({
     ...(datasourceUrl ? { datasources: { db: { url: datasourceUrl } } } : {}),
 });
 
+const isDbUnavailableError = (error) => {
+    if (!error) return false;
+    if (error.name === 'PrismaClientInitializationError') return true;
+
+    const message = String(error.message || '');
+    return (
+        message.includes("Can't reach database server") ||
+        message.includes('Database is unavailable') ||
+        message.includes('ECONNREFUSED')
+    );
+};
+
+const checkConnection = async () => {
+    await prisma.$queryRawUnsafe('SELECT 1');
+    return true;
+};
+
+// Attach helpers to the shared prisma instance.
+prisma.isDbUnavailableError = isDbUnavailableError;
+prisma.checkConnection = checkConnection;
+
 module.exports = prisma;

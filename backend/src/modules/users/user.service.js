@@ -3,12 +3,18 @@ const prisma = require('../../config/database');
 /**
  * Get all users with filters and pagination
  */
-const getAllUsers = async (filters) => {
+const getAllUsers = async (filters, actor) => {
     const { page, limit, role, search } = filters;
     const skip = (page - 1) * limit;
 
+    const tenantScope =
+        actor?.role === 'ADMIN'
+            ? { barbershopId: actor.barbershopId || '__NO_TENANT__' }
+            : {};
+
     const where = {
         deletedAt: null,
+        ...tenantScope,
         ...(role && { role }),
         ...(search && {
             OR: [
@@ -55,7 +61,7 @@ const getAllUsers = async (filters) => {
  * Get user by ID
  */
 const getUserById = async (id) => {
-    return await prisma.user.findUnique({
+    return await prisma.user.findFirst({
         where: { id, deletedAt: null },
         include: {
             barbershop: true,

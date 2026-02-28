@@ -1,9 +1,29 @@
 const prisma = require('../../config/database');
+const crypto = require('crypto');
 const notificationService = require('../../services/notification.service');
+const { QueueStatus, canTransition, isActiveQueueStatus } = require('./queue.state');
+
+const buildError = (status, message) => {
+    const err = new Error(message);
+    err.status = status;
+    return err;
+};
+
+const toMinutes = (time) => {
+    const [hoursRaw, minutesRaw] = String(time || '').split(':');
+    const hours = Number(hoursRaw);
+    const minutes = Number(minutesRaw);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) {
+        return null;
+    }
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+        return null;
+    }
+    return (hours * 60) + minutes;
+};
 
 /**
- * FUNGSI UTAMA: Calculate Estimated Time
- * Recalculates estimations for all waiting queues of a barber on a specific date.
+ * Recalculates estimations for all active queues of a barber on a specific date.
  */
 async function calculateQueueEstimation(barberId, scheduledDate) {
     const BUFFER_TIME = 5; // minutes between customers
@@ -11,39 +31,34 @@ async function calculateQueueEstimation(barberId, scheduledDate) {
     const startOfDay = new Date(dateObj.setHours(0, 0, 0, 0));
     const endOfDay = new Date(dateObj.setHours(23, 59, 59, 999));
 
-    // 1. Get current queue in progress
     const currentQueue = await prisma.queue.findFirst({
         where: {
             barberId,
             scheduledDate: { gte: startOfDay, lte: endOfDay },
-            status: 'IN_PROGRESS'
+            status: QueueStatus.IN_SERVICE
         },
         include: { service: true }
     });
 
     let nextStartTime;
     if (currentQueue && currentQueue.actualStart) {
-        // Calculate remaining time for current customer
-        const elapsed = (Date.now() - currentQueue.actualStart.getTime()) / 60000; // in minutes
+        const elapsed = (Date.now() - currentQueue.actualStart.getTime()) / 60000;
         const remaining = Math.max(0, currentQueue.estimatedDuration - elapsed);
         nextStartTime = new Date(Date.now() + remaining * 60000);
     } else {
-        // No current queue, start from now
         nextStartTime = new Date();
     }
 
-    // 2. Get all waiting queues
     const waitingQueues = await prisma.queue.findMany({
         where: {
             barberId,
             scheduledDate: { gte: startOfDay, lte: endOfDay },
-            status: 'WAITING'
+            status: { in: [QueueStatus.BOOKED, QueueStatus.CHECKED_IN] }
         },
         include: { service: true },
         orderBy: { position: 'asc' }
     });
 
-    // 3. Calculate estimation for each queue
     const updates = [];
     let currentEstimatedEnd = nextStartTime;
 
@@ -61,19 +76,19 @@ async function calculateQueueEstimation(barberId, scheduledDate) {
         currentEstimatedEnd = estimatedEnd;
     }
 
-    // 4. Batch update
-    await Promise.all(updates.map(update =>
-        prisma.queue.update({
-            where: { id: update.id },
-            data: {
-                estimatedStart: update.estimatedStart,
-                estimatedDuration: update.estimatedDuration,
-                estimatedEnd: update.estimatedEnd
-            }
-        })
-    ));
+    await Promise.all(
+        updates.map((update) =>
+            prisma.queue.update({
+                where: { id: update.id },
+                data: {
+                    estimatedStart: update.estimatedStart,
+                    estimatedDuration: update.estimatedDuration,
+                    estimatedEnd: update.estimatedEnd
+                }
+            })
+        )
+    );
 
-    // Emit real-time updates for all waiting queues
     if (global.io) {
         for (const update of updates) {
             const updatedQueue = await prisma.queue.findUnique({
@@ -82,27 +97,176 @@ async function calculateQueueEstimation(barberId, scheduledDate) {
             });
             global.io.to(`queue:${update.id}`).emit('queue:updated', updatedQueue);
         }
-        // Also notify the barber's room
         global.io.to(`barber:${barberId}`).emit('barber:queue:bulk_updated', { barberId, date: scheduledDate });
     }
 
     return updates;
 }
 
+const assertQueueAccess = (queue, actor, toStatus) => {
+    if (actor.role === 'SYSTEM') {
+        if (!actor.barbershopId || actor.barbershopId !== queue.barbershopId) {
+            throw buildError(403, 'System actor does not match tenant');
+        }
+        if (toStatus !== QueueStatus.CANCELED) {
+            throw buildError(403, 'System actor can only cancel booking');
+        }
+        return;
+    }
+
+    if (actor.role === 'SUPER_ADMIN') {
+        throw buildError(403, 'SUPER_ADMIN is not allowed to operate tenant queue workflow');
+    }
+
+    if (actor.role === 'CUSTOMER') {
+        if (queue.customerId !== actor.userId) {
+            throw buildError(403, 'Customer can only access own booking');
+        }
+        if (toStatus !== QueueStatus.CANCELED) {
+            throw buildError(403, 'Customer can only cancel booking');
+        }
+        return;
+    }
+
+    if (actor.role === 'ADMIN') {
+        if (!actor.barbershopId || queue.barbershopId !== actor.barbershopId) {
+            throw buildError(403, 'Admin can only access booking in own tenant');
+        }
+        return;
+    }
+
+    if (actor.role === 'BARBER') {
+        if (!actor.barberId) {
+            throw buildError(403, 'Barber profile is required');
+        }
+        if (queue.barberId !== actor.barberId) {
+            throw buildError(403, 'Barber can only operate own booking list');
+        }
+        return;
+    }
+
+    throw buildError(403, 'Unsupported actor role');
+};
+
 /**
  * CREATE QUEUE (booking/walk-in)
  */
 async function createQueue(data) {
     const {
-        barbershopId, barberId, customerId, serviceId,
-        bookingType, customerName, customerPhone, scheduledDate
+        barbershopId,
+        barberId,
+        customerId,
+        serviceId,
+        bookingType,
+        customerName,
+        customerPhone,
+        scheduledDate,
+        scheduledTime,
+        initialStatus = QueueStatus.BOOKED
     } = data;
+
+    if (![QueueStatus.BOOKED, QueueStatus.CHECKED_IN].includes(initialStatus)) {
+        throw buildError(400, 'Invalid initial booking status');
+    }
 
     const dateObj = new Date(scheduledDate);
     const startOfDay = new Date(dateObj.setHours(0, 0, 0, 0));
     const endOfDay = new Date(dateObj.setHours(23, 59, 59, 999));
 
-    // 1. Generate queue number (e.g., A001, A002)
+    const [barber, service] = await Promise.all([
+        prisma.barber.findFirst({
+            where: { id: barberId, barbershopId, deletedAt: null },
+            include: { schedules: true }
+        }),
+        prisma.service.findFirst({
+            where: { id: serviceId, barbershopId }
+        })
+    ]);
+
+    if (!barber) {
+        throw buildError(404, 'Barber not found for this tenant');
+    }
+
+    if (!service) {
+        throw buildError(404, 'Service not found for this tenant');
+    }
+
+    if (!scheduledTime) {
+        throw buildError(400, 'scheduledTime is required');
+    }
+
+    const [scheduledHour = '', scheduledMinute = ''] = String(scheduledTime).split(':');
+    const normalizedScheduledTime = `${scheduledHour.padStart(2, '0')}:${scheduledMinute.padStart(2, '0')}`;
+    const scheduledMinutes = toMinutes(normalizedScheduledTime);
+    if (scheduledMinutes === null) {
+        throw buildError(400, 'scheduledTime format is invalid');
+    }
+
+    // --- Schedule & Slot availability checks (always enforced) ---
+    const dayOfWeek = dateObj.getDay(); // 0=Sunday, 1=Monday...
+
+    // 1. Weekly Schedule Check
+    const daySchedule = barber.schedules.find((s) => s.dayOfWeek === dayOfWeek);
+    if (!daySchedule || !daySchedule.isWorkDay) {
+        throw buildError(409, 'Barber does not work on this day');
+    }
+
+    const scheduleStartMinutes = toMinutes(daySchedule.startTime);
+    const scheduleEndMinutes = toMinutes(daySchedule.endTime);
+    if (scheduleStartMinutes === null || scheduleEndMinutes === null) {
+        throw buildError(500, 'Invalid barber schedule configuration');
+    }
+
+    if (scheduledMinutes < scheduleStartMinutes || scheduledMinutes >= scheduleEndMinutes) {
+        throw buildError(409, `Barber only works between ${daySchedule.startTime} and ${daySchedule.endTime}`);
+    }
+
+    // 2. Specific Closures (UnavailableSlot)
+    const closure = await prisma.unavailableSlot.findFirst({
+        where: {
+            barbershopId,
+            date: startOfDay,
+            AND: [
+                {
+                    OR: [
+                        { barberId: null }, // Shop closure
+                        { barberId }        // Barber-specific closure
+                    ]
+                },
+                {
+                    OR: [
+                        { startTime: null }, // Whole day closure
+                        {
+                            AND: [
+                                { startTime: { lte: normalizedScheduledTime } },
+                                { endTime: { gt: normalizedScheduledTime } }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    });
+
+    if (closure) {
+        throw buildError(409, closure.note || 'Slot is manually closed by admin');
+    }
+
+    // 3. Double-Booking Prevention (Active Queue check)
+    const existingActiveQueue = await prisma.queue.findFirst({
+        where: {
+            barberId,
+            scheduledDate: startOfDay,
+            scheduledTime: normalizedScheduledTime,
+            status: { in: [QueueStatus.BOOKED, QueueStatus.CHECKED_IN, QueueStatus.IN_SERVICE] }
+        }
+    });
+
+    if (existingActiveQueue) {
+        throw buildError(409, 'This slot is already booked');
+    }
+    // --- End checks ---
+
     const todayQueuesCount = await prisma.queue.count({
         where: {
             barbershopId,
@@ -111,7 +275,6 @@ async function createQueue(data) {
     });
     const queueNumber = `A${String(todayQueuesCount + 1).padStart(3, '0')}`;
 
-    // 2. Get next position for this barber
     const lastPosition = await prisma.queue.findFirst({
         where: {
             barberId,
@@ -122,54 +285,59 @@ async function createQueue(data) {
     });
     const position = (lastPosition?.position || 0) + 1;
 
-    // 3. Get service details
-    const service = await prisma.service.findUnique({ where: { id: serviceId } });
-    if (!service) throw new Error('Service not found');
+    let queue;
+    try {
+        queue = await prisma.queue.create({
+            data: {
+                queueNumber,
+                barbershopId,
+                barberId,
+                customerId,
+                serviceId,
+                customerName,
+                customerPhone,
+                bookingType,
+                scheduledDate: startOfDay,
+                scheduledTime: normalizedScheduledTime,
+                position,
+                estimatedDuration: service.duration,
+                status: initialStatus,
+                cancelToken: !customerId ? crypto.randomBytes(16).toString('hex') : null,
+                estimatedStart: new Date(),
+                estimatedEnd: new Date()
+            }
+        });
+    } catch (error) {
+        if (error?.code === 'P2002') {
+            throw buildError(409, 'This slot is already booked');
+        }
+        throw error;
+    }
 
-    // 4. Create queue
-    const queue = await prisma.queue.create({
-        data: {
-            queueNumber,
-            barbershopId,
-            barberId,
-            customerId,
-            serviceId,
-            customerName,
-            customerPhone,
-            bookingType,
-            scheduledDate: startOfDay, // Normalize to start of day
-            position,
-            estimatedDuration: service.duration,
-            status: 'WAITING',
-            estimatedStart: new Date(), // Initial placeholder
-            estimatedEnd: new Date()    // Initial placeholder
+    await calculateQueueEstimation(barberId, startOfDay);
+
+    const updatedQueue = await prisma.queue.findUnique({
+        where: { id: queue.id },
+        include: {
+            service: true,
+            barber: true,
+            barbershop: true,
+            customer: { select: { fullName: true } }
         }
     });
 
-    // 5. Recalculate all estimations for this barber/day
-    await calculateQueueEstimation(barberId, startOfDay);
-
-    // 6. Get updated queue with estimations
-    const updatedQueue = await prisma.queue.findUnique({
-        where: { id: queue.id },
-        include: { service: true, barber: true, customer: { select: { fullName: true } } }
-    });
-
-    // 7. Create history log
     await prisma.queueHistory.create({
         data: {
             queueId: queue.id,
-            status: 'WAITING',
+            status: initialStatus,
             note: `Queue created via ${bookingType}`
         }
     });
 
-    // 8. Real-time emit
     if (global.io) {
         global.io.to(`barber:${barberId}`).emit('queue:new', updatedQueue);
     }
 
-    // 9. WhatsApp Notification (Booking Confirmed)
     if (updatedQueue.customerPhone) {
         await notificationService.sendBookingConfirmation(updatedQueue);
     }
@@ -177,121 +345,152 @@ async function createQueue(data) {
     return updatedQueue;
 }
 
-/**
- * START SERVICE
- */
-async function startService(queueId, barberId) {
-    const queue = await prisma.queue.findFirst({
-        where: { id: queueId, barberId, status: 'WAITING' }
+const transitionQueueStatus = async (queueId, actor, toStatus, options = {}) => {
+    const queue = await prisma.queue.findUnique({
+        where: { id: queueId },
+        include: { service: true, barber: true, barbershop: true }
     });
 
     if (!queue) {
-        throw new Error('Queue not found or already started');
+        throw buildError(404, 'Queue not found');
     }
 
-    const activeQueue = await prisma.queue.findFirst({
-        where: { barberId, status: 'IN_PROGRESS' }
-    });
+    assertQueueAccess(queue, actor, toStatus);
 
-    if (activeQueue) {
-        throw new Error('Finish current customer first');
+    if (!canTransition(queue.status, toStatus)) {
+        throw buildError(400, `Invalid booking transition: ${queue.status} -> ${toStatus}`);
     }
 
-    const updated = await prisma.queue.update({
-        where: { id: queueId },
-        data: {
-            status: 'IN_PROGRESS',
-            actualStart: new Date(),
-            statusChangedAt: new Date()
+    if (toStatus === QueueStatus.IN_SERVICE) {
+        const activeQueue = await prisma.queue.findFirst({
+            where: {
+                barberId: queue.barberId,
+                status: QueueStatus.IN_SERVICE,
+                NOT: { id: queue.id }
+            }
+        });
+        if (activeQueue) {
+            throw buildError(409, 'Finish current customer first');
+        }
+    }
+
+    const now = new Date();
+    const updateData = {
+        status: toStatus,
+        statusChangedAt: now
+    };
+
+    if (toStatus === QueueStatus.IN_SERVICE) {
+        updateData.actualStart = now;
+    }
+
+    if (toStatus === QueueStatus.DONE) {
+        const durationMinutes = queue.actualStart
+            ? Math.max(1, Math.round((now.getTime() - queue.actualStart.getTime()) / 60000))
+            : queue.estimatedDuration;
+
+        updateData.actualEnd = now;
+        updateData.actualDuration = durationMinutes;
+    }
+
+    if (toStatus === QueueStatus.CANCELED) {
+        updateData.cancelReason = options.reason || null;
+        updateData.cancelledBy = actor.userId || null;
+    }
+
+    const updatedCount = await prisma.queue.updateMany({
+        where: {
+            id: queueId,
+            barbershopId: queue.barbershopId,
+            status: queue.status
         },
-        include: { service: true, barber: true }
+        data: updateData
     });
+    if (updatedCount.count === 0) {
+        throw buildError(409, 'Queue status update conflict');
+    }
 
-    // Update barber status
-    await prisma.barber.update({
-        where: { id: barberId },
-        data: { status: 'BUSY' }
+    const updated = await prisma.queue.findUnique({
+        where: { id: queueId },
+        include: {
+            service: true,
+            barber: true,
+            barbershop: true,
+            customer: { select: { id: true, fullName: true, phoneNumber: true } }
+        }
     });
+    if (!updated) {
+        throw buildError(404, 'Queue not found after update');
+    }
+
+    if (toStatus === QueueStatus.IN_SERVICE) {
+        await prisma.barber.update({
+            where: { id: queue.barberId },
+            data: { status: 'BUSY' }
+        });
+    }
+
+    if (toStatus === QueueStatus.DONE) {
+        await prisma.barber.update({
+            where: { id: queue.barberId },
+            data: {
+                status: 'AVAILABLE',
+                totalCustomers: { increment: 1 }
+            }
+        });
+    }
 
     await prisma.queueHistory.create({
         data: {
             queueId,
-            status: 'IN_PROGRESS',
-            changedBy: barberId,
-            note: 'Service started'
+            status: toStatus,
+            changedBy: actor.userId || null,
+            note: options.note || options.reason || null
         }
     });
 
-    await calculateQueueEstimation(barberId, queue.scheduledDate);
+    await calculateQueueEstimation(queue.barberId, queue.scheduledDate);
 
     if (global.io) {
         global.io.to(`queue:${queueId}`).emit('queue:status_changed', updated);
-        global.io.to(`barber:${barberId}`).emit('barber:status_changed', { barberId, status: 'BUSY' });
+        global.io.to(`barber:${queue.barberId}`).emit('barber:queue:updated', updated);
     }
 
-    // 7. WhatsApp Notification (Your Turn)
-    if (updated.customerPhone) {
+    if (toStatus === QueueStatus.IN_SERVICE && updated.customerPhone) {
         await notificationService.sendYourTurn(updated);
     }
 
-    return updated;
-}
-
-/**
- * COMPLETE SERVICE
- */
-async function completeService(queueId, barberId) {
-    const queue = await prisma.queue.findFirst({
-        where: { id: queueId, barberId, status: 'IN_PROGRESS' }
-    });
-
-    if (!queue) {
-        throw new Error('Queue not found or not in progress');
-    }
-
-    const actualDuration = Math.round((Date.now() - queue.actualStart.getTime()) / 60000);
-
-    const updated = await prisma.queue.update({
-        where: { id: queueId },
-        data: {
-            status: 'COMPLETED',
-            actualEnd: new Date(),
-            actualDuration,
-            statusChangedAt: new Date()
-        },
-        include: { service: true, barber: true }
-    });
-
-    await prisma.barber.update({
-        where: { id: barberId },
-        data: {
-            status: 'AVAILABLE',
-            totalCustomers: { increment: 1 }
-        }
-    });
-
-    await prisma.queueHistory.create({
-        data: {
-            queueId,
-            status: 'COMPLETED',
-            changedBy: barberId,
-            note: `Completed in ${actualDuration} minutes`
-        }
-    });
-
-    await calculateQueueEstimation(barberId, queue.scheduledDate);
-
-    if (global.io) {
-        global.io.to(`queue:${queueId}`).emit('queue:status_changed', updated);
-        global.io.to(`barber:${barberId}`).emit('barber:status_changed', { barberId, status: 'AVAILABLE' });
-    }
-
-    // 7. WhatsApp Notification (Completed)
-    if (updated.customerPhone) {
+    if (toStatus === QueueStatus.DONE && updated.customerPhone) {
         await notificationService.sendPostService(updated);
     }
 
     return updated;
+};
+
+async function checkInQueue(queueId, actor, note) {
+    return transitionQueueStatus(queueId, actor, QueueStatus.CHECKED_IN, {
+        note: note || 'Customer checked in'
+    });
+}
+
+async function startService(queueId, actor, note) {
+    return transitionQueueStatus(queueId, actor, QueueStatus.IN_SERVICE, {
+        note: note || 'Service started'
+    });
+}
+
+async function completeService(queueId, actor, note) {
+    return transitionQueueStatus(queueId, actor, QueueStatus.DONE, {
+        note: note || 'Service completed'
+    });
+}
+
+async function markNoShow(queueId, actor, options = {}) {
+    const reason = options.reason || options.note || 'Customer no show';
+    return transitionQueueStatus(queueId, actor, QueueStatus.NO_SHOW, {
+        reason,
+        note: options.note || options.reason || 'Customer no show'
+    });
 }
 
 /**
@@ -301,7 +500,7 @@ async function getMyQueue(customerId) {
     const queue = await prisma.queue.findFirst({
         where: {
             customerId,
-            status: { in: ['WAITING', 'CALLED', 'IN_PROGRESS'] }
+            status: { in: [QueueStatus.BOOKED, QueueStatus.CHECKED_IN, QueueStatus.IN_SERVICE] }
         },
         include: {
             service: true,
@@ -323,7 +522,7 @@ async function getMyQueue(customerId) {
             barberId: queue.barberId,
             scheduledDate: queue.scheduledDate,
             position: { lt: queue.position },
-            status: { in: ['IN_PROGRESS', 'WAITING'] }
+            status: { in: [QueueStatus.BOOKED, QueueStatus.CHECKED_IN, QueueStatus.IN_SERVICE] }
         },
         include: { service: true },
         orderBy: { position: 'asc' }
@@ -353,12 +552,19 @@ async function getBarberQueues(barberId, date, status) {
     const startOfDay = new Date(dateObj.setHours(0, 0, 0, 0));
     const endOfDay = new Date(dateObj.setHours(23, 59, 59, 999));
 
-    return await prisma.queue.findMany({
-        where: {
-            barberId,
-            scheduledDate: { gte: startOfDay, lte: endOfDay },
-            ...(status && { status })
-        },
+    const where = {
+        barberId,
+        scheduledDate: { gte: startOfDay, lte: endOfDay }
+    };
+
+    if (status) {
+        where.status = status;
+    } else {
+        where.status = { in: Object.values(QueueStatus) };
+    }
+
+    return prisma.queue.findMany({
+        where,
         include: {
             service: true,
             customer: { select: { fullName: true, phoneNumber: true } }
@@ -370,63 +576,21 @@ async function getBarberQueues(barberId, date, status) {
 /**
  * CANCEL QUEUE
  */
-async function cancelQueue(queueId, userId, reason) {
-    const queue = await prisma.queue.findUnique({
-        where: { id: queueId }
-    });
-
-    if (!queue) throw new Error('Queue not found');
-    if (['COMPLETED', 'CANCELLED'].includes(queue.status)) {
-        throw new Error('Cannot cancel a finished or already cancelled queue');
-    }
-
-    const updated = await prisma.queue.update({
-        where: { id: queueId },
-        data: {
-            status: 'CANCELLED',
-            cancelReason: reason,
-            cancelledBy: userId,
-            statusChangedAt: new Date()
-        },
-        include: { service: true, barber: true }
-    });
-
-    // If was active, set barber to AVAILABLE
-    if (queue.status === 'IN_PROGRESS') {
-        await prisma.barber.update({
-            where: { id: queue.barberId },
-            data: { status: 'AVAILABLE' }
-        });
-    }
-
-    await prisma.queueHistory.create({
-        data: {
-            queueId,
-            status: 'CANCELLED',
-            changedBy: userId,
-            note: reason
-        }
-    });
-
-    // Recalculate
-    await calculateQueueEstimation(queue.barberId, queue.scheduledDate);
-
-    if (global.io) {
-        global.io.to(`queue:${queueId}`).emit('queue:cancelled', updated);
-        global.io.to(`barber:${queue.barberId}`).emit('queue:cancelled', updated);
-    }
-
-    // WhatsApp Notification (Optional, maybe just for customer if admin cancels)
-    // ...
-
-    return updated;
+async function cancelQueue(queueId, actor, reason) {
+    return transitionQueueStatus(queueId, actor, QueueStatus.CANCELED, { reason });
 }
 
 module.exports = {
+    QueueStatus,
+    canTransition,
+    isActiveQueueStatus,
     calculateQueueEstimation,
     createQueue,
+    transitionQueueStatus,
+    checkInQueue,
     startService,
     completeService,
+    markNoShow,
     getMyQueue,
     getBarberQueues,
     cancelQueue

@@ -1,38 +1,37 @@
 const Joi = require('joi');
 
-/**
- * Registration validation schema
- */
 const registerSchema = Joi.object({
-    fullName: Joi.string().trim().min(3).max(100).required(),
+    fullName: Joi.string().min(3).max(100).required(),
     email: Joi.string().email().required(),
     phoneNumber: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
     password: Joi.string().min(8).required(),
-    barbershopName: Joi.string().trim().min(3).max(100).required(),
-    slug: Joi.string().trim().lowercase().pattern(/^[a-z0-9-]+$/).required()
+    barbershopName: Joi.string().min(2).max(100).required(),
+    slug: Joi.string().pattern(/^[a-z0-9-]+$/).required()
 });
 
-/**
- * Customer registration schema
- */
 const customerRegisterSchema = Joi.object({
-    fullName: Joi.string().trim().min(3).max(100).required(),
+    fullName: Joi.string().min(3).max(100).required(),
     email: Joi.string().email().required(),
     phoneNumber: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
     password: Joi.string().min(8).required()
 });
 
-/**
- * Login validation schema
- */
-const loginSchema = Joi.object({
-    email: Joi.string().trim().min(3).required(),
+const tenantLoginSchema = Joi.object({
+    tenantSlug: Joi.string().pattern(/^[a-z0-9-]+$/).required(),
+    loginAs: Joi.string().valid('ADMIN', 'WORKER').required(),
+    identifier: Joi.string().trim().min(2).required(),
     password: Joi.string().required()
 });
 
-/**
- * Refresh token validation schema
- */
+const genericLoginSchema = Joi.object({
+    email: Joi.string().email(),
+    phoneNumber: Joi.string().pattern(/^[0-9+]{10,15}$/),
+    identifier: Joi.string().trim().min(2),
+    password: Joi.string().required()
+}).or('email', 'phoneNumber', 'identifier');
+
+const loginSchema = Joi.alternatives().try(tenantLoginSchema, genericLoginSchema);
+
 const refreshTokenSchema = Joi.object({
     refreshToken: Joi.string().required()
 });

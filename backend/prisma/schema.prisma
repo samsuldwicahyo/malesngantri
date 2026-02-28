@@ -15,13 +15,12 @@ enum UserRole {
 }
 
 enum QueueStatus {
-  WAITING
-  CALLED
-  IN_PROGRESS
-  COMPLETED
+  BOOKED
+  CHECKED_IN
+  IN_SERVICE
+  DONE
   NO_SHOW
-  CANCELLED
-  SKIPPED
+  CANCELED
 }
 
 enum BarberStatus {
@@ -57,11 +56,13 @@ model Barbershop {
   subscriptions BarbershopSubscription[]
   queues        Queue[]                  @relation("BarbershopQueues")
   reviews       Review[]                 @relation("BarbershopReviews")
+  unavailableSlots UnavailableSlot[]     @relation("BarbershopUnavailableSlots")
 }
 
 model User {
   id           String    @id @default(uuid())
   barbershopId String?
+  username     String?
   fullName     String
   email        String    @unique
   phoneNumber  String    @unique
@@ -77,6 +78,24 @@ model User {
   queues     Queue[]      @relation("UserQueues")
   reviews    Review[]     @relation("UserReviews")
   barberInfo Barber?      @relation("BarberUser")
+  refreshTokens RefreshToken[]
+
+  @@unique([barbershopId, username])
+  @@index([barbershopId, role])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model SubscriptionPlan {
@@ -122,6 +141,7 @@ model Barber {
   barbershop Barbershop @relation("BarbershopBarbers", fields: [barbershopId], references: [id])
   services   BarberService[]
   schedules  BarberSchedule[]
+  unavailableSlots UnavailableSlot[]
   queues     Queue[]          @relation("BarberQueues")
   reviews    Review[]         @relation("BarberReviews")
 
@@ -189,18 +209,19 @@ model Queue {
   actualDuration    Int?        // in minutes
   
   // Status
-  status            QueueStatus @default(WAITING)
+  status            QueueStatus @default(BOOKED)
   statusChangedAt   DateTime    @default(now())
   
   // Cancellation
   cancelReason      String?
   cancelledBy       String?     // userId who cancelled
+  cancelToken       String?     // Unique token for public cancellation (PR-3)
   
   // Notification tracking
   remindedH1        Boolean     @default(false)
   remindedT30       Boolean     @default(false)
   remindedT15       Boolean     @default(false)
-
+ 
   // Relations
   barbershop        Barbershop  @relation("BarbershopQueues", fields: [barbershopId], references: [id])
   barber            Barber      @relation("BarberQueues", fields: [barberId], references: [id])
@@ -212,9 +233,11 @@ model Queue {
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   
+  @@unique([barberId, scheduledDate, scheduledTime], name: "unique_barber_slot")
   @@index([barbershopId, scheduledDate, status])
   @@index([barberId, status])
   @@index([customerId])
+  @@index([cancelToken])
 }
 
 model QueueHistory {
@@ -271,6 +294,21 @@ model BarberSchedule {
   barber Barber @relation(fields: [barberId], references: [id])
 
   @@index([barberId])
+}
+
+model UnavailableSlot {
+  id           String     @id @default(cuid())
+  barberId     String?    // if null, shop is closed
+  barbershopId String
+  date         DateTime
+  startTime    String?    // "HH:mm", if null = whole day
+  endTime      String?    // "HH:mm"
+  note         String?
+
+  barbershop Barbershop @relation("BarbershopUnavailableSlots", fields: [barbershopId], references: [id])
+  barber     Barber?    @relation(fields: [barberId], references: [id])
+
+  @@index([barbershopId, date])
 }
 
 model BarbershopSubscription {

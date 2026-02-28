@@ -3,47 +3,48 @@ const Joi = require('joi');
 const createQueueSchema = Joi.object({
     barbershopId: Joi.string().required(),
     barberId: Joi.string().required(),
-    customerId: Joi.string().optional(),
     serviceId: Joi.string().required(),
-    customerName: Joi.string().trim().min(2).max(100).required(),
-    customerPhone: Joi.string().pattern(/^[0-9+]{10,15}$/).optional(),
-    bookingType: Joi.string().valid('ONLINE', 'WALK_IN').required(),
-    scheduledDate: Joi.date().iso().required(),
-    scheduledTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).optional()
-});
-
-const startServiceSchema = Joi.object({
-    barberId: Joi.string().required()
-});
-
-const completeServiceSchema = Joi.object({
-    barberId: Joi.string().required()
-});
-
-const cancelQueueSchema = Joi.object({
-    cancelReason: Joi.string().max(255).required()
+    customerName: Joi.string().min(2).max(100).required(),
+    customerPhone: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
+    scheduledDate: Joi.string().isoDate().required(),
+    bookingType: Joi.string().valid('ONLINE', 'WALK_IN').default('WALK_IN'),
+    scheduledTime: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).required()
 });
 
 const publicCreateQueueSchema = Joi.object({
     barbershopId: Joi.string().required(),
     barberId: Joi.string().required(),
     serviceId: Joi.string().required(),
-    customerName: Joi.string().trim().min(2).max(100).required(),
+    customerName: Joi.string().min(2).max(100).required(),
     customerPhone: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
-    bookingType: Joi.string().valid('ONLINE', 'WALK_IN').optional(),
-    scheduledDate: Joi.date().iso().optional(),
-    scheduledTime: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).optional()
+    scheduledDate: Joi.string().isoDate().required(),
+    bookingType: Joi.string().valid('ONLINE', 'WALK_IN').default('ONLINE'),
+    scheduledTime: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).required()
+});
+
+const transitionNoteSchema = Joi.object({
+    note: Joi.string().max(500).allow('', null)
+});
+
+const noShowTransitionSchema = Joi.object({
+    note: Joi.string().max(500).allow('', null),
+    reason: Joi.string().max(255).allow('', null)
+});
+
+const cancelQueueSchema = Joi.object({
+    cancelToken: Joi.string().allow('', null),
+    cancelReason: Joi.string().max(255).required()
 });
 
 const publicCancelQueueSchema = Joi.object({
-    customerPhone: Joi.string().pattern(/^[0-9+]{10,15}$/).required(),
+    cancelToken: Joi.string().required(),
     cancelReason: Joi.string().max(255).required()
 });
 
 module.exports = {
     createQueueSchema,
-    startServiceSchema,
-    completeServiceSchema,
+    transitionNoteSchema,
+    noShowTransitionSchema,
     cancelQueueSchema,
     publicCreateQueueSchema,
     publicCancelQueueSchema
